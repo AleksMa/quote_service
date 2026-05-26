@@ -1,0 +1,172 @@
+openapi: 3.0.3
+info:
+  title: Quote Service API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+paths:
+  /quote-updates:
+    post:
+      summary: Create an asynchronous quote update request
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema:
+            type: string
+            maxLength: 255
+          required: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateQuoteUpdateRequest"
+      responses:
+        "202":
+          description: Update request was accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuoteUpdate"
+        "400":
+          $ref: "#/components/responses/Error"
+  /quote-updates/{request_id}:
+    get:
+      summary: Get a quote update request by id
+      parameters:
+        - in: path
+          name: request_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Update completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuoteUpdate"
+        "202":
+          description: Update is pending or processing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuoteUpdate"
+        "409":
+          description: Update failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuoteUpdate"
+        "404":
+          $ref: "#/components/responses/Error"
+  /quotes/latest/{base}/{quote}:
+    get:
+      summary: Get the latest successful quote for a pair
+      parameters:
+        - in: path
+          name: base
+          required: true
+          schema:
+            type: string
+            example: EUR
+        - in: path
+          name: quote
+          required: true
+          schema:
+            type: string
+            example: MXN
+      responses:
+        "200":
+          description: Latest quote
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LatestQuote"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+components:
+  schemas:
+    CreateQuoteUpdateRequest:
+      type: object
+      required:
+        - pair
+      properties:
+        pair:
+          type: string
+          example: EUR/MXN
+    QuoteUpdate:
+      type: object
+      required:
+        - request_id
+        - status
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, processing, succeeded, failed]
+        pair:
+          type: string
+          example: EUR/MXN
+        price:
+          type: string
+          example: "20.1234567890"
+        provider:
+          type: string
+          example: frankfurter
+        updated_at:
+          type: string
+          format: date-time
+        error:
+          type: string
+    LatestQuote:
+      type: object
+      required:
+        - pair
+        - price
+        - provider
+        - updated_at
+        - request_id
+      properties:
+        pair:
+          type: string
+          example: EUR/MXN
+        price:
+          type: string
+          example: "20.1234567890"
+        provider:
+          type: string
+          example: frankfurter
+        updated_at:
+          type: string
+          format: date-time
+        request_id:
+          type: string
+          format: uuid
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+  responses:
+    Error:
+      description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

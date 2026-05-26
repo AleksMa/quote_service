@@ -1,0 +1,29 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: quote_service
+      POSTGRES_USER: quote_service
+      POSTGRES_PASSWORD: quote_service
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quote_service -d quote_service"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - quote_service_pgdata:/var/lib/postgresql/data
+
+  api:
+    build: .
+    environment:
+      CONFIG_PATH: /app/config.docker.yaml
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  quote_service_pgdata:
