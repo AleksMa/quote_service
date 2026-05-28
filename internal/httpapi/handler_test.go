@@ -37,6 +37,9 @@ func TestCreateUpdateRequest(t *testing.T) {
 	if response.RequestID == "" || response.Status != domain.StatusPending {
 		t.Fatalf("unexpected response: %+v", response)
 	}
+	if response.IdempotencyReplayed == nil || *response.IdempotencyReplayed {
+		t.Fatalf("expected idempotency_replayed=false, got %+v", response.IdempotencyReplayed)
+	}
 }
 
 func TestCreateUpdateRequestRejectsUnsupportedPair(t *testing.T) {
@@ -60,6 +63,12 @@ func TestCreateUpdateRequestIsIdempotent(t *testing.T) {
 
 	if first.RequestID != second.RequestID {
 		t.Fatalf("expected same request id, got %s and %s", first.RequestID, second.RequestID)
+	}
+	if first.IdempotencyReplayed == nil || *first.IdempotencyReplayed {
+		t.Fatalf("expected first request not to be replayed")
+	}
+	if second.IdempotencyReplayed == nil || !*second.IdempotencyReplayed {
+		t.Fatalf("expected second request to be replayed")
 	}
 }
 
@@ -124,12 +133,25 @@ func TestGetLatestQuoteMissingReturnsNotFound(t *testing.T) {
 	}
 }
 
-func TestCORSPreflightAllowedOrigin(t *testing.T) {
-	handler := New(newFakeStore(), map[string]struct{}{"EUR/MXN": {}}, Options{
-		CORSAllowedOrigins: []string{"http://localhost:*"},
-	})
+func TestSwaggerCORSForSimpleRequest(t *testing.T) {
+	store := newFakeStore()
+	store.latestErr = domain.ErrNotFound
+	handler := New(store, map[string]struct{}{"EUR/MXN": {}})
+	req := httptest.NewRequest(http.MethodGet, "/quotes/latest/EUR/MXN", nil)
+	req.Header.Set("Origin", swaggerUIOrigin)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Header().Get("Access-Control-Allow-Origin") != swaggerUIOrigin {
+		t.Fatalf("expected Swagger UI origin to be allowed")
+	}
+}
+
+func TestSwaggerCORSPreflight(t *testing.T) {
+	handler := New(newFakeStore(), map[string]struct{}{"EUR/MXN": {}})
 	req := httptest.NewRequest(http.MethodOptions, "/quote-updates", nil)
-	req.Header.Set("Origin", "http://localhost:3000")
+	req.Header.Set("Origin", swaggerUIOrigin)
 	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
 	req.Header.Set("Access-Control-Request-Headers", "Content-Type, Idempotency-Key")
 	rec := httptest.NewRecorder()
@@ -139,52 +161,11 @@ func TestCORSPreflightAllowedOrigin(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d", rec.Code)
 	}
-	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://localhost:3000" {
-		t.Fatalf("unexpected allowed origin: %q", got)
+	if rec.Header().Get("Access-Control-Allow-Origin") != swaggerUIOrigin {
+		t.Fatalf("expected Swagger UI origin to be allowed")
 	}
-	if got := rec.Header().Get("Access-Control-Allow-Headers"); got != corsAllowedHeaders {
-		t.Fatalf("unexpected allowed headers: %q", got)
-	}
-}
-
-func TestCORSAllowsAnyOrigin(t *testing.T) {
-	handler := New(newFakeStore(), map[string]struct{}{"EUR/MXN": {}}, Options{
-		CORSAllowedOrigins: []string{"*"},
-	})
-	req := httptest.NewRequest(http.MethodOptions, "/quote-updates", nil)
-	req.Header.Set("Origin", "https://editor.swagger.io")
-	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
-	req.Header.Set("Access-Control-Request-Private-Network", "true")
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d", rec.Code)
-	}
-	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
-		t.Fatalf("unexpected allowed origin: %q", got)
-	}
-	if got := rec.Header().Get("Access-Control-Allow-Private-Network"); got != "true" {
-		t.Fatalf("unexpected private network header: %q", got)
-	}
-}
-
-func TestCORSRejectsUnknownOrigin(t *testing.T) {
-	handler := New(newFakeStore(), map[string]struct{}{"EUR/MXN": {}}, Options{
-		CORSAllowedOrigins: []string{"http://localhost:*"},
-	})
-	req := httptest.NewRequest(http.MethodOptions, "/quote-updates", nil)
-	req.Header.Set("Origin", "https://example.test")
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
-
-	if rec.Header().Get("Access-Control-Allow-Origin") != "" {
-		t.Fatalf("unexpected CORS header for rejected origin")
-	}
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("expected request to fall through to handler, got %d", rec.Code)
+	if rec.Header().Get("Access-Control-Allow-Headers") != "Content-Type, Idempotency-Key" {
+		t.Fatalf("unexpected allowed headers: %q", rec.Header().Get("Access-Control-Allow-Headers"))
 	}
 }
 

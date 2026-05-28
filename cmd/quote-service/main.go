@@ -53,12 +53,8 @@ func main() {
 	go backgroundWorker.Run(ctx)
 
 	server := &http.Server{
-		Addr: cfg.HTTP.Addr,
-		Handler: httpapi.New(
-			quoteStore,
-			cfg.SupportedPairs,
-			httpapi.Options{CORSAllowedOrigins: cfg.HTTP.CORSAllowedOrigins},
-		),
+		Addr:              cfg.HTTP.Addr,
+		Handler:           httpapi.New(quoteStore, cfg.SupportedPairs),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

@@ -20,7 +20,7 @@ func NewExchangerateClient(name string, baseURL string, apiKey string, timeout t
 		Timeout:        timeout,
 		APIKey:         apiKey,
 		BuildRequest:   buildExchangerateRequest,
-		DecodeResponse: decodeExchangerateRequest,
+		DecodeResponse: decodeExchangerateResponse,
 	})
 }
 
@@ -34,7 +34,7 @@ func buildExchangerateRequest(ctx context.Context, cfg RequestConfig, pair domai
 	return req, nil
 }
 
-func decodeExchangerateRequest(resp *http.Response, cfg RequestConfig, pair domain.Pair) (string, error) {
+func decodeExchangerateResponse(resp *http.Response, cfg RequestConfig, pair domain.Pair) (string, error) {
 	var body struct {
 		Success bool                   `json:"success"`
 		Rates   map[string]json.Number `json:"rates"`

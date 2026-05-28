@@ -7,6 +7,7 @@ servers:
 paths:
   /quote-updates:
     post:
+      security: []
       summary: Create an asynchronous quote update request
       parameters:
         - in: header
@@ -32,6 +33,7 @@ paths:
           $ref: "#/components/responses/Error"
   /quote-updates/{request_id}:
     get:
+      security: []
       summary: Get a quote update request by id
       parameters:
         - in: path
@@ -63,6 +65,7 @@ paths:
           $ref: "#/components/responses/Error"
   /quotes/latest/{base}/{quote}:
     get:
+      security: []
       summary: Get the latest successful quote for a pair
       parameters:
         - in: path
@@ -110,6 +113,9 @@ components:
         status:
           type: string
           enum: [pending, processing, succeeded, failed]
+        idempotency_replayed:
+          type: boolean
+          description: Present on POST responses. True when an existing request was returned for the same pair and Idempotency-Key.
         pair:
           type: string
           example: EUR/MXN

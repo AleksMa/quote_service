@@ -12,9 +12,6 @@ func TestLoadFromYAML(t *testing.T) {
 	cfg := loadConfig(t, `
 http:
   addr: ":9090"
-  cors_allowed_origins:
-    - http://localhost:*
-    - http://127.0.0.1:*
 database:
   driver: postgres
   url: "postgres://example"
@@ -43,9 +40,6 @@ providers:
 
 	if cfg.HTTP.Addr != ":9090" || cfg.Database.Driver != "postgres" || cfg.Database.URL != "postgres://example" {
 		t.Fatalf("unexpected config: %+v", cfg)
-	}
-	if len(cfg.HTTP.CORSAllowedOrigins) != 2 || cfg.HTTP.CORSAllowedOrigins[0] != "http://localhost:*" {
-		t.Fatalf("unexpected CORS origins: %+v", cfg.HTTP.CORSAllowedOrigins)
 	}
 	if cfg.Worker.Interval != 3*time.Second || cfg.Worker.Concurrency != 4 {
 		t.Fatalf("unexpected worker config: %+v", cfg.Worker)
@@ -193,35 +187,6 @@ providers:
   - name: frankfurter
     type: frankfurter
     enabled: false
-    priority: 1
-    base_url: https://api.example.test
-    timeout: 5s
-    rate_limit_per_second: 1
-`)
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestLoadRejectsInvalidCORSOrigin(t *testing.T) {
-	_, err := loadConfigErr(t, `
-http:
-  addr: ":9090"
-  cors_allowed_origins:
-    - localhost:3000
-database:
-  driver: postgres
-  url: "postgres://example"
-worker:
-  interval: 3s
-  concurrency: 4
-shutdown_timeout: 8s
-supported_pairs:
-  - EUR/USD
-providers:
-  - name: frankfurter
-    type: frankfurter
-    enabled: true
     priority: 1
     base_url: https://api.example.test
     timeout: 5s

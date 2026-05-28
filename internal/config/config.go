@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -25,8 +24,7 @@ type Config struct {
 }
 
 type HTTPConfig struct {
-	Addr               string   `yaml:"addr"`
-	CORSAllowedOrigins []string `yaml:"cors_allowed_origins"`
+	Addr string `yaml:"addr"`
 }
 
 type DatabaseConfig struct {
@@ -87,11 +85,6 @@ func validate(raw rawConfig) (Config, error) {
 		return Config{}, fmt.Errorf("http.addr is required")
 	}
 	raw.HTTP.Addr = strings.TrimSpace(raw.HTTP.Addr)
-	corsAllowedOrigins, err := validateCORSAllowedOrigins(raw.HTTP.CORSAllowedOrigins)
-	if err != nil {
-		return Config{}, err
-	}
-	raw.HTTP.CORSAllowedOrigins = corsAllowedOrigins
 
 	raw.Database.Driver = strings.TrimSpace(raw.Database.Driver)
 	if raw.Database.Driver == "" {
@@ -152,15 +145,14 @@ func validateProviders(providers []ProviderConfig) ([]ProviderConfig, error) {
 		provider.APIKeyEnv = strings.TrimSpace(provider.APIKeyEnv)
 
 		if provider.Name == "" {
-			if provider.Enabled {
-				enabledCount++
-			}
-			continue
+			return nil, fmt.Errorf("provider %q name is required", i)
 		}
+
 		if _, ok := names[provider.Name]; ok {
 			return nil, fmt.Errorf("provider %q is duplicated", provider.Name)
 		}
 		names[provider.Name] = struct{}{}
+
 		if provider.Type == "" {
 			return nil, fmt.Errorf("provider %q type is required", provider.Name)
 		}
@@ -185,60 +177,6 @@ func validateProviders(providers []ProviderConfig) ([]ProviderConfig, error) {
 		return providers[i].Priority < providers[j].Priority
 	})
 	return providers, nil
-}
-
-func validateCORSAllowedOrigins(origins []string) ([]string, error) {
-	if len(origins) == 0 {
-		return nil, nil
-	}
-
-	seen := make(map[string]struct{}, len(origins))
-	validated := make([]string, 0, len(origins))
-	for _, origin := range origins {
-		origin = strings.TrimSpace(origin)
-		if origin == "" {
-			return nil, fmt.Errorf("http.cors_allowed_origins must not contain empty origins")
-		}
-		if _, ok := seen[origin]; ok {
-			return nil, fmt.Errorf("http.cors_allowed_origins contains duplicated origin %q", origin)
-		}
-		if err := validateOriginPattern(origin); err != nil {
-			return nil, fmt.Errorf("http.cors_allowed_origins contains invalid origin %q: %w", origin, err)
-		}
-		seen[origin] = struct{}{}
-		validated = append(validated, origin)
-	}
-	return validated, nil
-}
-
-func validateOriginPattern(origin string) error {
-	if origin == "*" {
-		return nil
-	}
-	if strings.HasSuffix(origin, ":*") {
-		return validateExactOrigin(strings.TrimSuffix(origin, ":*"))
-	}
-	return validateExactOrigin(origin)
-}
-
-func validateExactOrigin(origin string) error {
-	parsed, err := url.Parse(origin)
-	if err != nil {
-		return err
-	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return fmt.Errorf("scheme must be http or https")
-	}
-	if parsed.Host == "" {
-		return fmt.Errorf("host is required")
-	}
-	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return fmt.Errorf("origin must not contain user info, query, or fragment")
-	}
-	if parsed.Path != "" {
-		return fmt.Errorf("origin must not contain path")
-	}
-	return nil
 }
 
 func (c ProviderConfig) ResolvedAPIKey() string {

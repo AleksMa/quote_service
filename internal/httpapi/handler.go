@@ -17,20 +17,31 @@ type Handler struct {
 	supportedPairs map[string]struct{}
 }
 
-type Options struct {
-	CORSAllowedOrigins []string
-}
+const swaggerUIOrigin = "http://localhost:8081"
 
-func New(store storage.APIStore, supportedPairs map[string]struct{}, opts ...Options) http.Handler {
+func New(store storage.APIStore, supportedPairs map[string]struct{}) http.Handler {
 	h := &Handler{store: store, supportedPairs: supportedPairs}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/quote-updates", h.quoteUpdates)
 	mux.HandleFunc("/quote-updates/", h.quoteUpdateByID)
 	mux.HandleFunc("/quotes/latest/", h.latestQuote)
-	if len(opts) > 0 && len(opts[0].CORSAllowedOrigins) > 0 {
-		return withCORS(mux, opts[0].CORSAllowedOrigins)
-	}
-	return mux
+	return withSwaggerCORS(mux)
+}
+
+func withSwaggerCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Origin") == swaggerUIOrigin {
+			w.Header().Set("Access-Control-Allow-Origin", swaggerUIOrigin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Idempotency-Key")
+			w.Header().Add("Vary", "Origin")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (h *Handler) quoteUpdates(w http.ResponseWriter, r *http.Request) {
@@ -65,13 +76,15 @@ func (h *Handler) quoteUpdates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	update, _, err := h.store.CreateUpdateRequest(r.Context(), pair, idempotencyKey)
+	update, idempotencyReplayed, err := h.store.CreateUpdateRequest(r.Context(), pair, idempotencyKey)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to create update request")
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, updateResponse(update))
+	response := updateResponse(update)
+	response.IdempotencyReplayed = &idempotencyReplayed
+	writeJSON(w, http.StatusAccepted, response)
 }
 
 func (h *Handler) quoteUpdateByID(w http.ResponseWriter, r *http.Request) {
@@ -172,13 +185,14 @@ type apiError struct {
 }
 
 type quoteUpdateResponse struct {
-	RequestID string        `json:"request_id"`
-	Status    domain.Status `json:"status"`
-	Pair      string        `json:"pair,omitempty"`
-	Price     string        `json:"price,omitempty"`
-	Provider  string        `json:"provider,omitempty"`
-	UpdatedAt *time.Time    `json:"updated_at,omitempty"`
-	Error     string        `json:"error,omitempty"`
+	RequestID           string        `json:"request_id"`
+	Status              domain.Status `json:"status"`
+	IdempotencyReplayed *bool         `json:"idempotency_replayed,omitempty"`
+	Pair                string        `json:"pair,omitempty"`
+	Price               string        `json:"price,omitempty"`
+	Provider            string        `json:"provider,omitempty"`
+	UpdatedAt           *time.Time    `json:"updated_at,omitempty"`
+	Error               string        `json:"error,omitempty"`
 }
 
 type latestQuoteResponse struct {

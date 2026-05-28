@@ -18,5 +18,4 @@ COPY config.docker.yaml /app/config.docker.yaml
 EXPOSE 8080
 ENV CONFIG_PATH=/app/config.yaml
 ENV EXCHANGERATE_KEY=***
-ENV CURRENCYAPI_KEY=***
 ENTRYPOINT ["/app/quote-service"]

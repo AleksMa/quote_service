@@ -1,7 +1,5 @@
 http:
   addr: ":8080"
-  cors_allowed_origins:
-    - "*"
 
 database:
   driver: postgres
@@ -20,28 +18,19 @@ supported_pairs:
   - EUR/MXN
 
 providers:
-  - name: exchangerate
-    type: exchangerate
-    enabled: true
-    priority: 1
-    base_url: "http://api.exchangeratesapi.io"
-    timeout: 5s
-    rate_limit_per_second: 2
-    api_key_env: "EXCHANGERATE_KEY"
-
   - name: frankfurter
     type: frankfurter
     enabled: true
-    priority: 2
+    priority: 1
     base_url: "https://api.frankfurter.dev"
     timeout: 5s
     rate_limit_per_second: 5
 
-  - name: currencyapi
-    type: currencyapi
-    enabled: true
-    priority: 3
-    base_url: "https://api.currencyapi.com"
+  - name: exchangerate
+    type: exchangerate
+    enabled: false  # add api key before enabling
+    priority: 2
+    base_url: "http://api.exchangeratesapi.io"
     timeout: 5s
     rate_limit_per_second: 2
-    api_key_env: "CURRENCYAPI_KEY"
+    api_key_env: "EXCHANGERATE_KEY"
