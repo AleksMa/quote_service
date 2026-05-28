@@ -47,6 +47,7 @@ func main() {
 	}
 	backgroundWorker := worker.New(quoteStore, rateProvider, worker.Options{
 		Interval:    cfg.Worker.Interval,
+		ClaimLimit:  cfg.Worker.ClaimLimit,
 		Concurrency: cfg.Worker.Concurrency,
 		Logger:      logger,
 	})

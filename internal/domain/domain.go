@@ -75,6 +75,19 @@ func NewUUID() (string, error) {
 
 type UpdateRequest struct {
 	ID         string
+	JobID      string
+	Pair       Pair
+	Status     Status
+	Price      string
+	Provider   string
+	Error      string
+	CreatedAt  time.Time
+	StartedAt  *time.Time
+	FinishedAt *time.Time
+}
+
+type UpdateJob struct {
+	ID         string
 	Pair       Pair
 	Status     Status
 	Price      string

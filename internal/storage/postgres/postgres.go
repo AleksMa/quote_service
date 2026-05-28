@@ -67,65 +67,79 @@ func (s *Store) migrate(ctx context.Context) error {
 
 func (s *Store) resetProcessing(ctx context.Context) error {
 	_, err := s.pool.Exec(ctx, `
-		UPDATE quote_update_requests
+		UPDATE quote_update_jobs
 		SET status = $1, started_at = NULL
 		WHERE status = $2
 	`, domain.StatusPending, domain.StatusProcessing)
 	if err != nil {
-		return fmt.Errorf("reset processing requests: %w", err)
+		return fmt.Errorf("reset processing jobs: %w", err)
 	}
 	return nil
 }
 
 func (s *Store) CreateUpdateRequest(ctx context.Context, pair domain.Pair, idempotencyKey string) (domain.UpdateRequest, bool, error) {
-	id, err := domain.NewUUID()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return domain.UpdateRequest{}, false, fmt.Errorf("begin create update request: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	if idempotencyKey != "" {
+		existing, err := selectUpdateByIdempotency(ctx, tx, pair, idempotencyKey)
+		if err == nil {
+			if err := tx.Commit(ctx); err != nil {
+				return domain.UpdateRequest{}, false, fmt.Errorf("commit idempotent update request: %w", err)
+			}
+			return existing, true, nil
+		}
+		if !errors.Is(err, domain.ErrNotFound) {
+			return domain.UpdateRequest{}, false, err
+		}
+	}
+
+	job, err := ensureActiveJob(ctx, tx, pair)
+	if err != nil {
+		return domain.UpdateRequest{}, false, err
+	}
+
+	requestID, err := domain.NewUUID()
 	if err != nil {
 		return domain.UpdateRequest{}, false, fmt.Errorf("generate request id: %w", err)
 	}
 
-	if idempotencyKey != "" {
-		req, err := scanUpdate(s.pool.QueryRow(ctx, `
-			INSERT INTO quote_update_requests (id, pair, base_currency, quote_currency, status, idempotency_key)
-			VALUES ($1::uuid, $2, $3, $4, $5, $6)
-			ON CONFLICT (pair, idempotency_key)
-			WHERE idempotency_key IS NOT NULL AND idempotency_key <> ''
-			DO NOTHING
-			RETURNING id::text, pair, base_currency, quote_currency, status, price::text, provider, error, created_at, started_at, finished_at
-		`, id, pair.Raw, pair.Base, pair.Quote, domain.StatusPending, idempotencyKey))
-		if err == nil {
-			return req, false, nil
+	created, err := insertUpdateRequest(ctx, tx, requestID, job.ID, pair, idempotencyKey)
+	if err == nil {
+		if err := tx.Commit(ctx); err != nil {
+			return domain.UpdateRequest{}, false, fmt.Errorf("commit update request: %w", err)
 		}
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return domain.UpdateRequest{}, false, fmt.Errorf("insert update request: %w", err)
-		}
-
-		existing, err := scanUpdate(s.pool.QueryRow(ctx, `
-			SELECT id::text, pair, base_currency, quote_currency, status, price::text, provider, error, created_at, started_at, finished_at
-			FROM quote_update_requests
-			WHERE pair = $1 AND idempotency_key = $2
-		`, pair.Raw, idempotencyKey))
-		if err != nil {
-			return domain.UpdateRequest{}, false, translateNotFound(err, "find idempotent update request")
-		}
-		return existing, true, nil
+		return created, false, nil
 	}
-
-	req, err := scanUpdate(s.pool.QueryRow(ctx, `
-		INSERT INTO quote_update_requests (id, pair, base_currency, quote_currency, status)
-		VALUES ($1::uuid, $2, $3, $4, $5)
-		RETURNING id::text, pair, base_currency, quote_currency, status, price::text, provider, error, created_at, started_at, finished_at
-	`, id, pair.Raw, pair.Base, pair.Quote, domain.StatusPending))
-	if err != nil {
+	if !errors.Is(err, pgx.ErrNoRows) {
 		return domain.UpdateRequest{}, false, fmt.Errorf("insert update request: %w", err)
 	}
-	return req, false, nil
+	if idempotencyKey == "" {
+		return domain.UpdateRequest{}, false, fmt.Errorf("insert update request returned no rows")
+	}
+
+	existing, err := selectUpdateByIdempotency(ctx, tx, pair, idempotencyKey)
+	if err != nil {
+		return domain.UpdateRequest{}, false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domain.UpdateRequest{}, false, fmt.Errorf("commit idempotent update request: %w", err)
+	}
+	return existing, true, nil
 }
 
 func (s *Store) GetUpdateRequest(ctx context.Context, id string) (domain.UpdateRequest, error) {
 	req, err := scanUpdate(s.pool.QueryRow(ctx, `
-		SELECT id::text, pair, base_currency, quote_currency, status, price::text, provider, error, created_at, started_at, finished_at
-		FROM quote_update_requests
-		WHERE id = $1::uuid
+		SELECT r.id::text, r.job_id::text, r.pair, r.base_currency, r.quote_currency,
+			j.status, j.price::text, j.provider, j.error, r.created_at, j.started_at, j.finished_at
+		FROM quote_update_requests r
+		JOIN quote_update_jobs j ON j.id = r.job_id
+		WHERE r.id = $1::uuid
 	`, id))
 	if err != nil {
 		return domain.UpdateRequest{}, translateNotFound(err, "get update request")
@@ -148,62 +162,71 @@ func (s *Store) GetLatestQuote(ctx context.Context, pair domain.Pair) (domain.La
 	return quote, nil
 }
 
-func (s *Store) ClaimPending(ctx context.Context, limit int) ([]domain.UpdateRequest, error) {
+func (s *Store) ClaimPending(ctx context.Context, limit int) ([]domain.UpdateJob, error) {
 	rows, err := s.pool.Query(ctx, `
 		WITH picked AS (
 			SELECT id
-			FROM quote_update_requests
+			FROM quote_update_jobs
 			WHERE status = $1
 			ORDER BY created_at ASC
 			LIMIT $2
 			FOR UPDATE SKIP LOCKED
 		)
-		UPDATE quote_update_requests q
+		UPDATE quote_update_jobs j
 		SET status = $3, started_at = now(), error = NULL
 		FROM picked
-		WHERE q.id = picked.id
-		RETURNING q.id::text, q.pair, q.base_currency, q.quote_currency, q.status, q.price::text, q.provider, q.error, q.created_at, q.started_at, q.finished_at
+		WHERE j.id = picked.id
+		RETURNING j.id::text, j.pair, j.base_currency, j.quote_currency, j.status, j.price::text, j.provider, j.error, j.created_at, j.started_at, j.finished_at
 	`, domain.StatusPending, limit, domain.StatusProcessing)
 	if err != nil {
-		return nil, fmt.Errorf("claim pending requests: %w", err)
+		return nil, fmt.Errorf("claim pending jobs: %w", err)
 	}
 	defer rows.Close()
 
-	var requests []domain.UpdateRequest
+	var jobs []domain.UpdateJob
 	for rows.Next() {
-		req, err := scanUpdate(rows)
+		job, err := scanJob(rows)
 		if err != nil {
-			return nil, fmt.Errorf("scan claimed request: %w", err)
+			return nil, fmt.Errorf("scan claimed job: %w", err)
 		}
-		requests = append(requests, req)
+		jobs = append(jobs, job)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate claimed requests: %w", err)
+		return nil, fmt.Errorf("iterate claimed jobs: %w", err)
 	}
-	return requests, nil
+	return jobs, nil
 }
 
-func (s *Store) MarkSucceeded(ctx context.Context, id string, price string, provider string, updatedAt time.Time) error {
+func (s *Store) MarkSucceeded(ctx context.Context, jobID string, price string, provider string, updatedAt time.Time) error {
 	tag, err := s.pool.Exec(ctx, `
 		WITH updated AS (
-			UPDATE quote_update_requests
+			UPDATE quote_update_jobs
 			SET status = $2, price = $3::numeric, provider = $4, error = NULL, finished_at = $5
 			WHERE id = $1::uuid
 			RETURNING id, pair, base_currency, quote_currency, price, provider
+		),
+		request_for_job AS (
+			SELECT r.id
+			FROM quote_update_requests r, updated u
+			WHERE r.job_id = u.id
+			ORDER BY r.created_at ASC
+			LIMIT 1
 		)
-		INSERT INTO latest_quotes (pair, base_currency, quote_currency, price, provider, updated_at, request_id)
-		SELECT pair, base_currency, quote_currency, price, provider, $5, id
-		FROM updated
+		INSERT INTO latest_quotes (pair, base_currency, quote_currency, price, provider, updated_at, request_id, job_id)
+		SELECT u.pair, u.base_currency, u.quote_currency, u.price, u.provider, $5, r.id, u.id
+		FROM updated u
+		JOIN request_for_job r ON true
 		ON CONFLICT (pair) DO UPDATE
 		SET base_currency = EXCLUDED.base_currency,
 			quote_currency = EXCLUDED.quote_currency,
 			price = EXCLUDED.price,
 			provider = EXCLUDED.provider,
 			updated_at = EXCLUDED.updated_at,
-			request_id = EXCLUDED.request_id
-	`, id, domain.StatusSucceeded, price, provider, updatedAt)
+			request_id = EXCLUDED.request_id,
+			job_id = EXCLUDED.job_id
+	`, jobID, domain.StatusSucceeded, price, provider, updatedAt)
 	if err != nil {
-		return fmt.Errorf("mark request succeeded: %w", err)
+		return fmt.Errorf("mark job succeeded: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound
@@ -211,19 +234,114 @@ func (s *Store) MarkSucceeded(ctx context.Context, id string, price string, prov
 	return nil
 }
 
-func (s *Store) MarkFailed(ctx context.Context, id string, message string, finishedAt time.Time) error {
+func (s *Store) MarkFailed(ctx context.Context, jobID string, message string, finishedAt time.Time) error {
 	tag, err := s.pool.Exec(ctx, `
-		UPDATE quote_update_requests
+		UPDATE quote_update_jobs
 		SET status = $2, error = $3, finished_at = $4
 		WHERE id = $1::uuid
-	`, id, domain.StatusFailed, message, finishedAt)
+	`, jobID, domain.StatusFailed, message, finishedAt)
 	if err != nil {
-		return fmt.Errorf("mark request failed: %w", err)
+		return fmt.Errorf("mark job failed: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound
 	}
 	return nil
+}
+
+func ensureActiveJob(ctx context.Context, tx pgx.Tx, pair domain.Pair) (domain.UpdateJob, error) {
+	for attempts := 0; attempts < 3; attempts++ {
+		jobID, err := domain.NewUUID()
+		if err != nil {
+			return domain.UpdateJob{}, fmt.Errorf("generate job id: %w", err)
+		}
+
+		job, err := scanJob(tx.QueryRow(ctx, `
+			INSERT INTO quote_update_jobs (id, pair, base_currency, quote_currency, status)
+			VALUES ($1::uuid, $2, $3, $4, $5)
+			ON CONFLICT (pair)
+			WHERE status IN ('pending', 'processing')
+			DO NOTHING
+			RETURNING id::text, pair, base_currency, quote_currency, status, price::text, provider, error, created_at, started_at, finished_at
+		`, jobID, pair.Raw, pair.Base, pair.Quote, domain.StatusPending))
+		if err == nil {
+			return job, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return domain.UpdateJob{}, fmt.Errorf("insert update job: %w", err)
+		}
+
+		job, err = selectActiveJob(ctx, tx, pair)
+		if err == nil {
+			return job, nil
+		}
+		if !errors.Is(err, domain.ErrNotFound) {
+			return domain.UpdateJob{}, err
+		}
+	}
+	return domain.UpdateJob{}, fmt.Errorf("ensure active update job for pair %s: %w", pair.Raw, domain.ErrNotFound)
+}
+
+func selectActiveJob(ctx context.Context, tx pgx.Tx, pair domain.Pair) (domain.UpdateJob, error) {
+	job, err := scanJob(tx.QueryRow(ctx, `
+		SELECT id::text, pair, base_currency, quote_currency, status, price::text, provider, error, created_at, started_at, finished_at
+		FROM quote_update_jobs
+		WHERE pair = $1 AND status IN ($2, $3)
+		ORDER BY created_at ASC
+		LIMIT 1
+		FOR UPDATE
+	`, pair.Raw, domain.StatusPending, domain.StatusProcessing))
+	if err != nil {
+		return domain.UpdateJob{}, translateNotFound(err, "select active update job")
+	}
+	return job, nil
+}
+
+func insertUpdateRequest(ctx context.Context, tx pgx.Tx, requestID string, jobID string, pair domain.Pair, idempotencyKey string) (domain.UpdateRequest, error) {
+	if idempotencyKey != "" {
+		return scanUpdate(tx.QueryRow(ctx, `
+			WITH inserted AS (
+				INSERT INTO quote_update_requests (id, job_id, pair, base_currency, quote_currency, idempotency_key)
+				VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6)
+				ON CONFLICT (pair, idempotency_key)
+				WHERE idempotency_key IS NOT NULL AND idempotency_key <> ''
+				DO NOTHING
+				RETURNING id, job_id, pair, base_currency, quote_currency, created_at
+			)
+			SELECT i.id::text, i.job_id::text, i.pair, i.base_currency, i.quote_currency,
+				j.status, j.price::text, j.provider, j.error, i.created_at, j.started_at, j.finished_at
+			FROM inserted i
+			JOIN quote_update_jobs j ON j.id = i.job_id
+		`, requestID, jobID, pair.Raw, pair.Base, pair.Quote, idempotencyKey))
+	}
+
+	return scanUpdate(tx.QueryRow(ctx, `
+		WITH inserted AS (
+			INSERT INTO quote_update_requests (id, job_id, pair, base_currency, quote_currency)
+			VALUES ($1::uuid, $2::uuid, $3, $4, $5)
+			RETURNING id, job_id, pair, base_currency, quote_currency, created_at
+		)
+		SELECT i.id::text, i.job_id::text, i.pair, i.base_currency, i.quote_currency,
+			j.status, j.price::text, j.provider, j.error, i.created_at, j.started_at, j.finished_at
+		FROM inserted i
+		JOIN quote_update_jobs j ON j.id = i.job_id
+	`, requestID, jobID, pair.Raw, pair.Base, pair.Quote))
+}
+
+func selectUpdateByIdempotency(ctx context.Context, tx pgx.Tx, pair domain.Pair, idempotencyKey string) (domain.UpdateRequest, error) {
+	req, err := scanUpdate(tx.QueryRow(ctx, `
+		SELECT r.id::text, r.job_id::text, r.pair, r.base_currency, r.quote_currency,
+			j.status, j.price::text, j.provider, j.error, r.created_at, j.started_at, j.finished_at
+		FROM quote_update_requests r
+		JOIN quote_update_jobs j ON j.id = r.job_id
+		WHERE r.pair = $1 AND r.idempotency_key = $2
+		ORDER BY r.created_at ASC
+		LIMIT 1
+	`, pair.Raw, idempotencyKey))
+	if err != nil {
+		return domain.UpdateRequest{}, translateNotFound(err, "select idempotent update request")
+	}
+	return req, nil
 }
 
 type updateScanner interface {
@@ -239,6 +357,7 @@ func scanUpdate(row updateScanner) (domain.UpdateRequest, error) {
 
 	err := row.Scan(
 		&req.ID,
+		&req.JobID,
 		&rawPair,
 		&base,
 		&quote,
@@ -272,6 +391,50 @@ func scanUpdate(row updateScanner) (domain.UpdateRequest, error) {
 		req.FinishedAt = &finishedAt.Time
 	}
 	return req, nil
+}
+
+func scanJob(row updateScanner) (domain.UpdateJob, error) {
+	var job domain.UpdateJob
+	var rawPair, base, quote string
+	var status string
+	var price, provider, errorMessage sql.NullString
+	var startedAt, finishedAt sql.NullTime
+
+	err := row.Scan(
+		&job.ID,
+		&rawPair,
+		&base,
+		&quote,
+		&status,
+		&price,
+		&provider,
+		&errorMessage,
+		&job.CreatedAt,
+		&startedAt,
+		&finishedAt,
+	)
+	if err != nil {
+		return domain.UpdateJob{}, err
+	}
+
+	job.Pair = domain.Pair{Raw: rawPair, Base: base, Quote: quote}
+	job.Status = domain.Status(status)
+	if price.Valid {
+		job.Price = price.String
+	}
+	if provider.Valid {
+		job.Provider = provider.String
+	}
+	if errorMessage.Valid {
+		job.Error = errorMessage.String
+	}
+	if startedAt.Valid {
+		job.StartedAt = &startedAt.Time
+	}
+	if finishedAt.Valid {
+		job.FinishedAt = &finishedAt.Time
+	}
+	return job, nil
 }
 
 func translateNotFound(err error, op string) error {

@@ -34,6 +34,7 @@ type DatabaseConfig struct {
 
 type WorkerConfig struct {
 	Interval    time.Duration `yaml:"interval"`
+	ClaimLimit  int           `yaml:"claim_limit"`
 	Concurrency int           `yaml:"concurrency"`
 }
 
@@ -97,6 +98,9 @@ func validate(raw rawConfig) (Config, error) {
 
 	if raw.Worker.Interval <= 0 {
 		return Config{}, fmt.Errorf("worker.interval must be greater than zero")
+	}
+	if raw.Worker.ClaimLimit < 1 {
+		return Config{}, fmt.Errorf("worker.claim_limit must be greater than zero")
 	}
 	if raw.Worker.Concurrency < 1 {
 		return Config{}, fmt.Errorf("worker.concurrency must be greater than zero")
@@ -207,12 +211,14 @@ func (d duration) MarshalYAML() (any, error) {
 func (w *WorkerConfig) UnmarshalYAML(value *yaml.Node) error {
 	var raw struct {
 		Interval    duration `yaml:"interval"`
+		ClaimLimit  int      `yaml:"claim_limit"`
 		Concurrency int      `yaml:"concurrency"`
 	}
 	if err := value.Decode(&raw); err != nil {
 		return err
 	}
 	w.Interval = raw.Interval.Duration
+	w.ClaimLimit = raw.ClaimLimit
 	w.Concurrency = raw.Concurrency
 	return nil
 }

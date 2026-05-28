@@ -7,6 +7,7 @@ database:
 
 worker:
   interval: 2s
+  claim_limit: 20
   concurrency: 2
 
 shutdown_timeout: 10s

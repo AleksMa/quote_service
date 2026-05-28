@@ -19,9 +19,9 @@ type APIStore interface {
 }
 
 type WorkerStore interface {
-	ClaimPending(ctx context.Context, limit int) ([]domain.UpdateRequest, error)
-	MarkSucceeded(ctx context.Context, id string, price string, provider string, updatedAt time.Time) error
-	MarkFailed(ctx context.Context, id string, message string, finishedAt time.Time) error
+	ClaimPending(ctx context.Context, limit int) ([]domain.UpdateJob, error)
+	MarkSucceeded(ctx context.Context, jobID string, price string, provider string, updatedAt time.Time) error
+	MarkFailed(ctx context.Context, jobID string, message string, finishedAt time.Time) error
 }
 
 type Store interface {

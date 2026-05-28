@@ -17,6 +17,7 @@ database:
   url: "postgres://example"
 worker:
   interval: 3s
+  claim_limit: 10
   concurrency: 4
 shutdown_timeout: 8s
 supported_pairs:
@@ -41,7 +42,7 @@ providers:
 	if cfg.HTTP.Addr != ":9090" || cfg.Database.Driver != "postgres" || cfg.Database.URL != "postgres://example" {
 		t.Fatalf("unexpected config: %+v", cfg)
 	}
-	if cfg.Worker.Interval != 3*time.Second || cfg.Worker.Concurrency != 4 {
+	if cfg.Worker.Interval != 3*time.Second || cfg.Worker.ClaimLimit != 10 || cfg.Worker.Concurrency != 4 {
 		t.Fatalf("unexpected worker config: %+v", cfg.Worker)
 	}
 	if cfg.ShutdownTimeout != 8*time.Second {
@@ -70,6 +71,7 @@ database:
   url: "postgres://example"
 worker:
   interval: 3s
+  claim_limit: 10
   concurrency: 4
 shutdown_timeout: 8s
 supported_pairs: [EUR/USD]
@@ -89,6 +91,7 @@ database:
   url: "postgres://example"
 worker:
   interval: 3s
+  claim_limit: 10
   concurrency: 4
 shutdown_timeout: 8s
 supported_pairs: [EUR/USD]
@@ -108,6 +111,27 @@ database:
   driver: postgres
   url: "postgres://example"
 worker:
+  claim_limit: 10
+  concurrency: 4
+shutdown_timeout: 8s
+supported_pairs: [EUR/USD]
+providers:
+  - name: first
+    type: frankfurter
+    enabled: true
+    priority: 1
+    base_url: https://api.example.test
+    timeout: 5s
+    rate_limit_per_second: 2
+`,
+		"worker claim limit": `
+http:
+  addr: ":9090"
+database:
+  driver: postgres
+  url: "postgres://example"
+worker:
+  interval: 3s
   concurrency: 4
 shutdown_timeout: 8s
 supported_pairs: [EUR/USD]
@@ -128,6 +152,7 @@ database:
   url: "postgres://example"
 worker:
   interval: 3s
+  claim_limit: 10
   concurrency: 4
 shutdown_timeout: 8s
 providers:
@@ -147,6 +172,7 @@ database:
   url: "postgres://example"
 worker:
   interval: 3s
+  claim_limit: 10
   concurrency: 4
 shutdown_timeout: 8s
 supported_pairs: [EUR/USD]
@@ -179,6 +205,7 @@ database:
   url: "postgres://example"
 worker:
   interval: 3s
+  claim_limit: 10
   concurrency: 4
 shutdown_timeout: 8s
 supported_pairs:
@@ -209,6 +236,7 @@ database:
   url: "postgres://yaml"
 worker:
   interval: 3s
+  claim_limit: 10
   concurrency: 4
 shutdown_timeout: 8s
 supported_pairs:

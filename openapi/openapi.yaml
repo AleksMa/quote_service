@@ -9,6 +9,7 @@ paths:
     post:
       security: []
       summary: Create an asynchronous quote update request
+      description: Creates a client request and attaches it to an active background job for the pair, reusing that job when another request for the same pair is already pending or processing.
       parameters:
         - in: header
           name: Idempotency-Key
