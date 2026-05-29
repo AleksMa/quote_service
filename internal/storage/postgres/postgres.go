@@ -203,6 +203,7 @@ func (s *Store) MarkSucceeded(ctx context.Context, jobID string, price string, p
 			UPDATE quote_update_jobs
 			SET status = $2, price = $3::numeric, provider = $4, error = NULL, finished_at = $5
 			WHERE id = $1::uuid
+				AND status IN ($6, $7)
 			RETURNING id, pair, base_currency, quote_currency, price, provider
 		),
 		request_for_job AS (
@@ -224,12 +225,12 @@ func (s *Store) MarkSucceeded(ctx context.Context, jobID string, price string, p
 			updated_at = EXCLUDED.updated_at,
 			request_id = EXCLUDED.request_id,
 			job_id = EXCLUDED.job_id
-	`, jobID, domain.StatusSucceeded, price, provider, updatedAt)
+	`, jobID, domain.StatusSucceeded, price, provider, updatedAt, domain.StatusPending, domain.StatusProcessing)
 	if err != nil {
 		return fmt.Errorf("mark job succeeded: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
-		return domain.ErrNotFound
+		return s.terminalJobError(ctx, jobID)
 	}
 	return nil
 }
@@ -239,14 +240,33 @@ func (s *Store) MarkFailed(ctx context.Context, jobID string, message string, fi
 		UPDATE quote_update_jobs
 		SET status = $2, error = $3, finished_at = $4
 		WHERE id = $1::uuid
-	`, jobID, domain.StatusFailed, message, finishedAt)
+			AND status IN ($5, $6)
+	`, jobID, domain.StatusFailed, message, finishedAt, domain.StatusPending, domain.StatusProcessing)
 	if err != nil {
 		return fmt.Errorf("mark job failed: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
-		return domain.ErrNotFound
+		return s.terminalJobError(ctx, jobID)
 	}
 	return nil
+}
+
+func (s *Store) terminalJobError(ctx context.Context, jobID string) error {
+	var status domain.Status
+	err := s.pool.QueryRow(ctx, `
+		SELECT status
+		FROM quote_update_jobs
+		WHERE id = $1::uuid
+	`, jobID).Scan(&status)
+	if err != nil {
+		return translateNotFound(err, "get terminal job status")
+	}
+	switch status {
+	case domain.StatusSucceeded, domain.StatusFailed:
+		return domain.ErrAlreadyFinished
+	default:
+		return domain.ErrNotFound
+	}
 }
 
 func ensureActiveJob(ctx context.Context, tx pgx.Tx, pair domain.Pair) (domain.UpdateJob, error) {

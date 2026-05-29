@@ -135,6 +135,19 @@ func TestStoreClaimMarkSucceededAndLatestQuote(t *testing.T) {
 	if latest.Pair.Raw != pair.Raw || latest.Price == "" || latest.Provider != "test-provider" || latest.RequestID != created.ID {
 		t.Fatalf("unexpected latest quote: %+v", latest)
 	}
+
+	err = store.MarkFailed(ctx, created.JobID, "late provider failure", updatedAt.Add(time.Second))
+	if !errors.Is(err, domain.ErrAlreadyFinished) {
+		t.Fatalf("expected ErrAlreadyFinished for terminal job, got %v", err)
+	}
+
+	stillSucceeded, err := store.GetUpdateRequest(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetUpdateRequest returned error after late failure: %v", err)
+	}
+	if stillSucceeded.Status != domain.StatusSucceeded || stillSucceeded.Error != "" {
+		t.Fatalf("terminal succeeded job was changed: %+v", stillSucceeded)
+	}
 }
 
 func TestStoreMarkFailed(t *testing.T) {
@@ -162,6 +175,19 @@ func TestStoreMarkFailed(t *testing.T) {
 	}
 	if got.Status != domain.StatusFailed || got.Error != "provider failed" {
 		t.Fatalf("unexpected failed request: %+v", got)
+	}
+
+	err = store.MarkSucceeded(ctx, created.JobID, "9.9999", "late-provider", time.Now().UTC())
+	if !errors.Is(err, domain.ErrAlreadyFinished) {
+		t.Fatalf("expected ErrAlreadyFinished for terminal job, got %v", err)
+	}
+
+	stillFailed, err := store.GetUpdateRequest(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetUpdateRequest returned error after late success: %v", err)
+	}
+	if stillFailed.Status != domain.StatusFailed || stillFailed.Price != "" || stillFailed.Provider != "" || stillFailed.Error != "provider failed" {
+		t.Fatalf("terminal failed job was changed: %+v", stillFailed)
 	}
 }
 
