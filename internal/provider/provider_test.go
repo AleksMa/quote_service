@@ -49,7 +49,7 @@ func TestBuildChainSkipsUnnamedProvider(t *testing.T) {
 	client, err := BuildChain([]config.ProviderConfig{
 		{
 			Name:     "",
-			Type:     FrankfurterProviderName,
+			Type:     config.ProviderTypeFrankfurter,
 			Enabled:  true,
 			Priority: 1,
 			BaseURL:  "https://ignored.example.test",
@@ -57,7 +57,7 @@ func TestBuildChainSkipsUnnamedProvider(t *testing.T) {
 		},
 		{
 			Name:     "frankfurter",
-			Type:     FrankfurterProviderName,
+			Type:     config.ProviderTypeFrankfurter,
 			Enabled:  true,
 			Priority: 2,
 			BaseURL:  "https://api.example.test",

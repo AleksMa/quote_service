@@ -25,7 +25,7 @@ supported_pairs:
   - EUR/USD
 providers:
   - name: second
-    type: fawaz
+    type: exchangerate
     enabled: true
     priority: 20
     base_url: https://cdn.example.test/currency-api
@@ -57,6 +57,51 @@ providers:
 	}
 	if cfg.Providers[0].Name != "first" || cfg.Providers[1].Name != "second" {
 		t.Fatalf("providers were not sorted by priority: %+v", cfg.Providers)
+	}
+}
+
+func TestLoadRejectsUnsupportedProviderType(t *testing.T) {
+	_, err := loadConfigErr(t, `
+http:
+  addr: ":9090"
+database:
+  driver: postgres
+  url: "postgres://example"
+worker:
+  interval: 3s
+  claim_limit: 10
+  concurrency: 4
+shutdown_timeout: 8s
+supported_pairs:
+  - EUR/USD
+providers:
+  - name: first
+    type: fawaz
+    enabled: true
+    priority: 1
+    base_url: https://api.example.test
+    timeout: 5s
+    rate_limit_per_second: 2
+`)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), `unsupported provider type "fawaz"`) {
+		t.Fatalf("expected unsupported provider type error, got %v", err)
+	}
+}
+
+func TestParseProviderTypeRequiresKnownExactValue(t *testing.T) {
+	got, err := ParseProviderType(" frankfurter ")
+	if err != nil {
+		t.Fatalf("ParseProviderType returned error: %v", err)
+	}
+	if got != ProviderTypeFrankfurter {
+		t.Fatalf("unexpected provider type: %q", got)
+	}
+
+	if _, err := ParseProviderType("FRANKFURTER"); err == nil {
+		t.Fatal("expected uppercase provider type to be rejected")
 	}
 }
 

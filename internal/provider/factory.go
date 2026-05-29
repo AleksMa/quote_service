@@ -23,9 +23,9 @@ func BuildChain(configs []config.ProviderConfig, logger *slog.Logger) (Client, e
 
 		var client Client
 		switch cfg.Type {
-		case FrankfurterProviderName:
+		case config.ProviderTypeFrankfurter:
 			client = NewFrankfurterClient(cfg.Name, cfg.BaseURL, cfg.Timeout)
-		case ExchangerateProviderName:
+		case config.ProviderTypeExchangerate:
 			client = NewExchangerateClient(cfg.Name, cfg.BaseURL, cfg.ResolvedAPIKey(), cfg.Timeout)
 		default:
 			return nil, fmt.Errorf("unsupported provider type %q for provider %q", cfg.Type, cfg.Name)

@@ -12,8 +12,6 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-const ExchangerateProviderName = "exchangerate"
-
 func NewExchangerateClient(name string, baseURL string, apiKey string, timeout time.Duration) *HTTPClient {
 	return NewHTTPClient(HTTPClientConfig{
 		Name:           name,

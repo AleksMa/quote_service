@@ -12,8 +12,6 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-const FrankfurterProviderName = "frankfurter"
-
 func NewFrankfurterClient(name string, baseURL string, timeout time.Duration) *HTTPClient {
 	return NewHTTPClient(HTTPClientConfig{
 		Name:           name,

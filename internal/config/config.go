@@ -42,7 +42,7 @@ type WorkerConfig struct {
 
 type ProviderConfig struct {
 	Name               string        `yaml:"name"`
-	Type               string        `yaml:"type"`
+	Type               ProviderType  `yaml:"type"`
 	Enabled            bool          `yaml:"enabled"`
 	Priority           int           `yaml:"priority"`
 	BaseURL            string        `yaml:"base_url"`
@@ -51,6 +51,13 @@ type ProviderConfig struct {
 	APIKey             string        `yaml:"api_key"`
 	APIKeyEnv          string        `yaml:"api_key_env"`
 }
+
+type ProviderType string
+
+const (
+	ProviderTypeFrankfurter  ProviderType = "frankfurter"
+	ProviderTypeExchangerate ProviderType = "exchangerate"
+)
 
 type rawConfig struct {
 	HTTP            HTTPConfig       `yaml:"http"`
@@ -150,7 +157,6 @@ func validateProviders(providers []ProviderConfig) ([]ProviderConfig, error) {
 	for i := range providers {
 		provider := &providers[i]
 		provider.Name = strings.TrimSpace(provider.Name)
-		provider.Type = strings.TrimSpace(provider.Type)
 		provider.BaseURL = strings.TrimRight(strings.TrimSpace(provider.BaseURL), "/")
 		provider.APIKey = strings.TrimSpace(provider.APIKey)
 		provider.APIKeyEnv = strings.TrimSpace(provider.APIKeyEnv)
@@ -164,9 +170,11 @@ func validateProviders(providers []ProviderConfig) ([]ProviderConfig, error) {
 		}
 		names[provider.Name] = struct{}{}
 
-		if provider.Type == "" {
-			return nil, fmt.Errorf("provider %q type is required", provider.Name)
+		providerType, err := ParseProviderType(provider.Type.String())
+		if err != nil {
+			return nil, fmt.Errorf("provider %q: %w", provider.Name, err)
 		}
+		provider.Type = providerType
 		if provider.BaseURL == "" {
 			return nil, fmt.Errorf("provider %q base_url is required", provider.Name)
 		}
@@ -188,6 +196,22 @@ func validateProviders(providers []ProviderConfig) ([]ProviderConfig, error) {
 		return providers[i].Priority < providers[j].Priority
 	})
 	return providers, nil
+}
+
+func ParseProviderType(value string) (ProviderType, error) {
+	normalized := ProviderType(strings.TrimSpace(value))
+	switch normalized {
+	case ProviderTypeFrankfurter, ProviderTypeExchangerate:
+		return normalized, nil
+	case "":
+		return "", fmt.Errorf("provider type is required")
+	default:
+		return "", fmt.Errorf("unsupported provider type %q", value)
+	}
+}
+
+func (t ProviderType) String() string {
+	return string(t)
 }
 
 func validateOptionalOrigin(field string, value string) (string, error) {
@@ -254,15 +278,15 @@ func (w *WorkerConfig) UnmarshalYAML(value *yaml.Node) error {
 
 func (p *ProviderConfig) UnmarshalYAML(value *yaml.Node) error {
 	var raw struct {
-		Name               string   `yaml:"name"`
-		Type               string   `yaml:"type"`
-		Enabled            bool     `yaml:"enabled"`
-		Priority           int      `yaml:"priority"`
-		BaseURL            string   `yaml:"base_url"`
-		Timeout            duration `yaml:"timeout"`
-		RateLimitPerSecond int      `yaml:"rate_limit_per_second"`
-		APIKey             string   `yaml:"api_key"`
-		APIKeyEnv          string   `yaml:"api_key_env"`
+		Name               string       `yaml:"name"`
+		Type               ProviderType `yaml:"type"`
+		Enabled            bool         `yaml:"enabled"`
+		Priority           int          `yaml:"priority"`
+		BaseURL            string       `yaml:"base_url"`
+		Timeout            duration     `yaml:"timeout"`
+		RateLimitPerSecond int          `yaml:"rate_limit_per_second"`
+		APIKey             string       `yaml:"api_key"`
+		APIKeyEnv          string       `yaml:"api_key_env"`
 	}
 	if err := value.Decode(&raw); err != nil {
 		return err
@@ -276,6 +300,18 @@ func (p *ProviderConfig) UnmarshalYAML(value *yaml.Node) error {
 	p.RateLimitPerSecond = raw.RateLimitPerSecond
 	p.APIKey = raw.APIKey
 	p.APIKeyEnv = raw.APIKeyEnv
+	return nil
+}
+
+func (t *ProviderType) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind != yaml.ScalarNode {
+		return fmt.Errorf("provider type must be a scalar")
+	}
+	providerType, err := ParseProviderType(value.Value)
+	if err != nil {
+		return err
+	}
+	*t = providerType
 	return nil
 }
 
