@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -18,7 +19,7 @@ type Handler struct {
 }
 
 type Options struct {
-	SwaggerUIOrigin string
+	SwaggerUIOrigin url.URL
 }
 
 func New(store storage.APIStore, supportedPairs map[string]struct{}, opts ...Options) http.Handler {
@@ -27,8 +28,8 @@ func New(store storage.APIStore, supportedPairs map[string]struct{}, opts ...Opt
 	mux.HandleFunc("/quote-updates", h.quoteUpdates)
 	mux.HandleFunc("/quote-updates/", h.quoteUpdateByID)
 	mux.HandleFunc("/quotes/latest/", h.latestQuote)
-	if len(opts) > 0 && opts[0].SwaggerUIOrigin != "" {
-		return withSwaggerCORS(mux, opts[0].SwaggerUIOrigin)
+	if len(opts) > 0 && opts[0].SwaggerUIOrigin.String() != "" {
+		return withSwaggerCORS(mux, opts[0].SwaggerUIOrigin.String())
 	}
 	return mux
 }

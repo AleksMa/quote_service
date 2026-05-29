@@ -13,7 +13,7 @@ import (
 )
 
 func TestFrankfurterClientFetchRate(t *testing.T) {
-	client := NewFrankfurterClient("frankfurter", "https://example.test", time.Second)
+	client := NewFrankfurterClient("frankfurter", mustURL("https://example.test"), time.Second)
 	client.httpClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path != "/v2/rate/EUR/USD" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
@@ -32,7 +32,7 @@ func TestFrankfurterClientFetchRate(t *testing.T) {
 }
 
 func TestFrankfurterClientReturnsHTTPErrorMessage(t *testing.T) {
-	client := NewFrankfurterClient("frankfurter", "https://example.test", time.Second)
+	client := NewFrankfurterClient("frankfurter", mustURL("https://example.test"), time.Second)
 	client.httpClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		return jsonResponse(http.StatusNotFound, `{"message":"rate not found"}`), nil
 	})}

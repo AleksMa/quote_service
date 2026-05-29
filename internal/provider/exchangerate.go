@@ -13,7 +13,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func NewExchangeRateClient(name string, baseURL string, apiKey string, timeout time.Duration) *HTTPClient {
+func NewExchangeRateClient(name string, baseURL url.URL, apiKey string, timeout time.Duration) *HTTPClient {
 	return NewHTTPClient(HTTPClientConfig{
 		Name:           name,
 		BaseURL:        baseURL,
@@ -25,8 +25,21 @@ func NewExchangeRateClient(name string, baseURL string, apiKey string, timeout t
 }
 
 func buildExchangeRateRequest(ctx context.Context, cfg RequestConfig, pair domain.Pair) (*http.Request, error) {
-	endpoint := fmt.Sprintf("%s/v1/latest?access_key=%s&base=%s&symbols=%s", cfg.BaseURL, cfg.APIKey, url.PathEscape(pair.Base), url.PathEscape(pair.Quote))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	endpoint, err := url.JoinPath(cfg.BaseURL.String(), "v1", "latest")
+	if err != nil {
+		return nil, fmt.Errorf("build %s endpoint: %w", cfg.Name, err)
+	}
+	endpointURL, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s endpoint: %w", cfg.Name, err)
+	}
+	query := endpointURL.Query()
+	query.Set("access_key", cfg.APIKey)
+	query.Set("base", pair.Base)
+	query.Set("symbols", pair.Quote)
+	endpointURL.RawQuery = query.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpointURL.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("build %s request: %w", cfg.Name, err)
 	}

@@ -25,8 +25,8 @@ type Config struct {
 }
 
 type HTTPConfig struct {
-	Addr            string `yaml:"addr"`
-	SwaggerUIOrigin string `yaml:"swagger_ui_origin"`
+	Addr            string  `yaml:"addr"`
+	SwaggerUIOrigin url.URL `yaml:"swagger_ui_origin"`
 }
 
 type DatabaseConfig struct {
@@ -45,7 +45,7 @@ type ProviderConfig struct {
 	Type               ProviderType  `yaml:"type"`
 	Enabled            bool          `yaml:"enabled"`
 	Priority           int           `yaml:"priority"`
-	BaseURL            string        `yaml:"base_url"`
+	BaseURL            url.URL       `yaml:"base_url"`
 	Timeout            time.Duration `yaml:"timeout"`
 	RateLimitPerSecond int           `yaml:"rate_limit_per_second"`
 	APIKey             string        `yaml:"api_key"`
@@ -60,12 +60,29 @@ const (
 )
 
 type rawConfig struct {
-	HTTP            HTTPConfig       `yaml:"http"`
-	Database        DatabaseConfig   `yaml:"database"`
-	Worker          WorkerConfig     `yaml:"worker"`
-	Providers       []ProviderConfig `yaml:"providers"`
-	SupportedPairs  []string         `yaml:"supported_pairs"`
-	ShutdownTimeout duration         `yaml:"shutdown_timeout"`
+	HTTP            rawHTTPConfig       `yaml:"http"`
+	Database        DatabaseConfig      `yaml:"database"`
+	Worker          WorkerConfig        `yaml:"worker"`
+	Providers       []rawProviderConfig `yaml:"providers"`
+	SupportedPairs  []string            `yaml:"supported_pairs"`
+	ShutdownTimeout duration            `yaml:"shutdown_timeout"`
+}
+
+type rawHTTPConfig struct {
+	Addr            string `yaml:"addr"`
+	SwaggerUIOrigin string `yaml:"swagger_ui_origin"`
+}
+
+type rawProviderConfig struct {
+	Name               string       `yaml:"name"`
+	Type               ProviderType `yaml:"type"`
+	Enabled            bool         `yaml:"enabled"`
+	Priority           int          `yaml:"priority"`
+	BaseURL            string       `yaml:"base_url"`
+	Timeout            duration     `yaml:"timeout"`
+	RateLimitPerSecond int          `yaml:"rate_limit_per_second"`
+	APIKey             string       `yaml:"api_key"`
+	APIKeyEnv          string       `yaml:"api_key_env"`
 }
 
 type duration struct {
@@ -106,22 +123,34 @@ func normalizeConfig(raw rawConfig) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	httpConfig, err := normalizeHTTPConfig(raw.HTTP)
+	if err != nil {
+		return Config{}, err
+	}
+	providers, err := normalizeProviders(raw.Providers)
+	if err != nil {
+		return Config{}, err
+	}
 
 	return Config{
-		HTTP:            normalizeHTTPConfig(raw.HTTP),
+		HTTP:            httpConfig,
 		Database:        normalizeDatabaseConfig(raw.Database),
 		Worker:          raw.Worker,
-		Providers:       normalizeProviders(raw.Providers),
+		Providers:       providers,
 		SupportedPairs:  supportedPairs,
 		ShutdownTimeout: raw.ShutdownTimeout.Duration,
 	}, nil
 }
 
-func normalizeHTTPConfig(cfg HTTPConfig) HTTPConfig {
+func normalizeHTTPConfig(cfg rawHTTPConfig) (HTTPConfig, error) {
+	swaggerUIOrigin, err := normalizeOptionalURL("http.swagger_ui_origin", cfg.SwaggerUIOrigin)
+	if err != nil {
+		return HTTPConfig{}, err
+	}
 	return HTTPConfig{
 		Addr:            strings.TrimSpace(cfg.Addr),
-		SwaggerUIOrigin: strings.TrimSpace(cfg.SwaggerUIOrigin),
-	}
+		SwaggerUIOrigin: swaggerUIOrigin,
+	}, nil
 }
 
 func normalizeDatabaseConfig(cfg DatabaseConfig) DatabaseConfig {
@@ -131,29 +160,41 @@ func normalizeDatabaseConfig(cfg DatabaseConfig) DatabaseConfig {
 	}
 }
 
-func normalizeProviders(providers []ProviderConfig) []ProviderConfig {
+func normalizeProviders(providers []rawProviderConfig) ([]ProviderConfig, error) {
 	normalized := make([]ProviderConfig, len(providers))
 	for i, provider := range providers {
-		normalized[i] = normalizeProviderConfig(provider)
+		normalizedProvider, err := normalizeProviderConfig(provider)
+		if err != nil {
+			return nil, err
+		}
+		normalized[i] = normalizedProvider
 	}
 	sort.SliceStable(normalized, func(i, j int) bool {
 		return normalized[i].Priority < normalized[j].Priority
 	})
-	return normalized
+	return normalized, nil
 }
 
-func normalizeProviderConfig(cfg ProviderConfig) ProviderConfig {
+func normalizeProviderConfig(cfg rawProviderConfig) (ProviderConfig, error) {
+	baseURL, err := normalizeBaseURL("provider.base_url", cfg.BaseURL)
+	if err != nil {
+		name := strings.TrimSpace(cfg.Name)
+		if name == "" {
+			return ProviderConfig{}, err
+		}
+		return ProviderConfig{}, fmt.Errorf("provider %q: %w", name, err)
+	}
 	return ProviderConfig{
 		Name:               strings.TrimSpace(cfg.Name),
 		Type:               NormalizeProviderType(cfg.Type.String()),
 		Enabled:            cfg.Enabled,
 		Priority:           cfg.Priority,
-		BaseURL:            strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
-		Timeout:            cfg.Timeout,
+		BaseURL:            baseURL,
+		Timeout:            cfg.Timeout.Duration,
 		RateLimitPerSecond: cfg.RateLimitPerSecond,
 		APIKey:             strings.TrimSpace(cfg.APIKey),
 		APIKeyEnv:          strings.TrimSpace(cfg.APIKeyEnv),
-	}
+	}, nil
 }
 
 func normalizeSupportedPairs(pairs []string) (map[string]struct{}, error) {
@@ -253,8 +294,8 @@ func (c ProviderConfig) validate() error {
 	if err := c.Type.validate(); err != nil {
 		return err
 	}
-	if c.BaseURL == "" {
-		return fmt.Errorf("base_url is required")
+	if err := validateBaseURL("base_url", c.BaseURL); err != nil {
+		return err
 	}
 	if c.Timeout <= 0 {
 		return fmt.Errorf("timeout must be greater than zero")
@@ -292,25 +333,71 @@ func (t ProviderType) String() string {
 	return string(t)
 }
 
-func validateOptionalOrigin(field string, value string) error {
-	if value == "" {
+func normalizeOptionalURL(field string, value string) (url.URL, error) {
+	normalized := strings.TrimSpace(value)
+	if normalized == "" {
+		return url.URL{}, nil
+	}
+	parsed, err := url.Parse(normalized)
+	if err != nil {
+		return url.URL{}, fmt.Errorf("%s must be a valid URL: %w", field, err)
+	}
+	return *parsed, nil
+}
+
+func normalizeBaseURL(field string, value string) (url.URL, error) {
+	normalized := strings.TrimRight(strings.TrimSpace(value), "/")
+	if normalized == "" {
+		return url.URL{}, nil
+	}
+	parsed, err := url.Parse(normalized)
+	if err != nil {
+		return url.URL{}, fmt.Errorf("%s must be a valid URL: %w", field, err)
+	}
+	return *parsed, nil
+}
+
+func validateBaseURL(field string, value url.URL) error {
+	if isZeroURL(value) {
+		return fmt.Errorf("%s is required", field)
+	}
+	if err := validateHTTPURL(field, value); err != nil {
+		return err
+	}
+	if value.RawQuery != "" || value.ForceQuery || value.Fragment != "" {
+		return fmt.Errorf("%s must not contain query or fragment", field)
+	}
+	return nil
+}
+
+func validateOptionalOrigin(field string, value url.URL) error {
+	if isZeroURL(value) {
 		return nil
 	}
-
-	parsed, err := url.Parse(value)
-	if err != nil {
-		return fmt.Errorf("%s must be a valid URL: %w", field, err)
+	if err := validateHTTPURL(field, value); err != nil {
+		return err
 	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return fmt.Errorf("%s scheme must be http or https", field)
-	}
-	if parsed.Host == "" {
-		return fmt.Errorf("%s host is required", field)
-	}
-	if parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+	if value.User != nil || value.Path != "" || value.RawQuery != "" || value.ForceQuery || value.Fragment != "" {
 		return fmt.Errorf("%s must be an origin without user info, path, query, or fragment", field)
 	}
 	return nil
+}
+
+func validateHTTPURL(field string, value url.URL) error {
+	if value.Scheme != "http" && value.Scheme != "https" {
+		return fmt.Errorf("%s scheme must be http or https", field)
+	}
+	if value.Host == "" {
+		return fmt.Errorf("%s host is required", field)
+	}
+	if value.User != nil {
+		return fmt.Errorf("%s must not contain user info", field)
+	}
+	return nil
+}
+
+func isZeroURL(value url.URL) bool {
+	return value.String() == ""
 }
 
 func (c ProviderConfig) ResolvedAPIKey() string {
@@ -350,33 +437,6 @@ func (w *WorkerConfig) UnmarshalYAML(value *yaml.Node) error {
 	w.Interval = raw.Interval.Duration
 	w.ClaimLimit = raw.ClaimLimit
 	w.Concurrency = raw.Concurrency
-	return nil
-}
-
-func (p *ProviderConfig) UnmarshalYAML(value *yaml.Node) error {
-	var raw struct {
-		Name               string       `yaml:"name"`
-		Type               ProviderType `yaml:"type"`
-		Enabled            bool         `yaml:"enabled"`
-		Priority           int          `yaml:"priority"`
-		BaseURL            string       `yaml:"base_url"`
-		Timeout            duration     `yaml:"timeout"`
-		RateLimitPerSecond int          `yaml:"rate_limit_per_second"`
-		APIKey             string       `yaml:"api_key"`
-		APIKeyEnv          string       `yaml:"api_key_env"`
-	}
-	if err := value.Decode(&raw); err != nil {
-		return err
-	}
-	p.Name = raw.Name
-	p.Type = raw.Type
-	p.Enabled = raw.Enabled
-	p.Priority = raw.Priority
-	p.BaseURL = raw.BaseURL
-	p.Timeout = raw.Timeout.Duration
-	p.RateLimitPerSecond = raw.RateLimitPerSecond
-	p.APIKey = raw.APIKey
-	p.APIKeyEnv = raw.APIKeyEnv
 	return nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -52,7 +53,7 @@ func TestBuildChainSkipsUnnamedProvider(t *testing.T) {
 			Type:     config.ProviderTypeFrankfurter,
 			Enabled:  true,
 			Priority: 1,
-			BaseURL:  "https://ignored.example.test",
+			BaseURL:  mustURL("https://ignored.example.test"),
 			Timeout:  time.Second,
 		},
 		{
@@ -60,7 +61,7 @@ func TestBuildChainSkipsUnnamedProvider(t *testing.T) {
 			Type:     config.ProviderTypeFrankfurter,
 			Enabled:  true,
 			Priority: 2,
-			BaseURL:  "https://api.example.test",
+			BaseURL:  mustURL("https://api.example.test"),
 			Timeout:  time.Second,
 		},
 	}, logger)
@@ -73,4 +74,12 @@ func TestBuildChainSkipsUnnamedProvider(t *testing.T) {
 	if !strings.Contains(logs.String(), "skip provider without name") {
 		t.Fatalf("expected skip warning, got logs: %s", logs.String())
 	}
+}
+
+func mustURL(value string) url.URL {
+	parsed, err := url.Parse(value)
+	if err != nil {
+		panic(err)
+	}
+	return *parsed
 }

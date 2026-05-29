@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 
 type HTTPClientConfig struct {
 	Name           string
-	BaseURL        string
+	BaseURL        url.URL
 	APIKey         string
 	Timeout        time.Duration
 	BuildRequest   RequestBuilder
@@ -24,7 +25,7 @@ type HTTPClientConfig struct {
 
 type RequestConfig struct {
 	Name    string
-	BaseURL string
+	BaseURL url.URL
 	APIKey  string
 }
 
@@ -33,7 +34,7 @@ type ResponseDecoder func(resp *http.Response, cfg RequestConfig, pair domain.Pa
 
 type HTTPClient struct {
 	name           string
-	baseURL        string
+	baseURL        url.URL
 	apiKey         string
 	httpClient     *http.Client
 	now            func() time.Time
@@ -44,7 +45,7 @@ type HTTPClient struct {
 func NewHTTPClient(cfg HTTPClientConfig) *HTTPClient {
 	return &HTTPClient{
 		name:    strings.TrimSpace(cfg.Name),
-		baseURL: strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
+		baseURL: cfg.BaseURL,
 		apiKey:  strings.TrimSpace(cfg.APIKey),
 		httpClient: &http.Client{
 			Timeout: cfg.Timeout,
@@ -77,7 +78,7 @@ func (c *HTTPClient) FetchRate(ctx context.Context, pair domain.Pair) (Rate, err
 	if err != nil {
 		return Rate{}, err
 	}
-	
+
 	err = validatePrice(c.name, price)
 	if err != nil {
 		return Rate{}, err

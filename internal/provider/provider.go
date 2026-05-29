@@ -2,8 +2,8 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -39,15 +39,15 @@ func NewChain(clients []NamedClient) (*Chain, error) {
 }
 
 func (c *Chain) FetchRate(ctx context.Context, pair domain.Pair) (Rate, error) {
-	var failures []string
-	for _, item := range c.clients {
-		rate, err := item.Client.FetchRate(ctx, pair)
+	var errs []error
+	for _, client := range c.clients {
+		rate, err := client.Client.FetchRate(ctx, pair)
 		if err == nil {
 			return rate, nil
 		}
-		failures = append(failures, fmt.Sprintf("%s: %v", item.Name, err))
+		errs = append(errs, fmt.Errorf("%s failed: %w", client.Name, err))
 	}
-	return Rate{}, fmt.Errorf("all providers failed: %s", strings.Join(failures, "; "))
+	return Rate{}, fmt.Errorf("all providers failed: %w", errors.Join(errs...))
 }
 
 type RateLimitedClient struct {

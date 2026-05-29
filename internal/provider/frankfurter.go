@@ -13,7 +13,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func NewFrankfurterClient(name string, baseURL string, timeout time.Duration) *HTTPClient {
+func NewFrankfurterClient(name string, baseURL url.URL, timeout time.Duration) *HTTPClient {
 	return NewHTTPClient(HTTPClientConfig{
 		Name:           name,
 		BaseURL:        baseURL,
@@ -24,7 +24,10 @@ func NewFrankfurterClient(name string, baseURL string, timeout time.Duration) *H
 }
 
 func buildFrankfurterRequest(ctx context.Context, cfg RequestConfig, pair domain.Pair) (*http.Request, error) {
-	endpoint := fmt.Sprintf("%s/v2/rate/%s/%s", cfg.BaseURL, url.PathEscape(pair.Base), url.PathEscape(pair.Quote))
+	endpoint, err := url.JoinPath(cfg.BaseURL.String(), "v2", "rate", pair.Base, pair.Quote)
+	if err != nil {
+		return nil, fmt.Errorf("build %s endpoint: %w", cfg.Name, err)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build %s request: %w", cfg.Name, err)

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,8 +44,8 @@ providers:
 	if cfg.HTTP.Addr != ":9090" || cfg.Database.Driver != "postgres" || cfg.Database.URL != "postgres://example" {
 		t.Fatalf("unexpected config: %+v", cfg)
 	}
-	if cfg.HTTP.SwaggerUIOrigin != "http://localhost:8081" {
-		t.Fatalf("unexpected Swagger UI origin: %q", cfg.HTTP.SwaggerUIOrigin)
+	if cfg.HTTP.SwaggerUIOrigin.String() != "http://localhost:8081" {
+		t.Fatalf("unexpected Swagger UI origin: %q", cfg.HTTP.SwaggerUIOrigin.String())
 	}
 	if cfg.Worker.Interval != 3*time.Second || cfg.Worker.ClaimLimit != 10 || cfg.Worker.Concurrency != 4 {
 		t.Fatalf("unexpected worker config: %+v", cfg.Worker)
@@ -57,6 +58,9 @@ providers:
 	}
 	if cfg.Providers[0].Name != "first" || cfg.Providers[1].Name != "second" {
 		t.Fatalf("providers were not sorted by priority: %+v", cfg.Providers)
+	}
+	if cfg.Providers[1].BaseURL.String() != "https://cdn.example.test/currency-api" {
+		t.Fatalf("unexpected provider base URL: %s", cfg.Providers[1].BaseURL.String())
 	}
 }
 
@@ -112,7 +116,7 @@ func TestValidateProvidersDoesNotMutate(t *testing.T) {
 			Type:     ProviderTypeExchangeRate,
 			Enabled:  true,
 			Priority: 20,
-			BaseURL:  "https://api.second.example.test",
+			BaseURL:  mustURL("https://api.second.example.test"),
 			Timeout:  5 * time.Second,
 		},
 		{
@@ -120,7 +124,7 @@ func TestValidateProvidersDoesNotMutate(t *testing.T) {
 			Type:     ProviderTypeFrankfurter,
 			Enabled:  true,
 			Priority: 10,
-			BaseURL:  "https://api.first.example.test",
+			BaseURL:  mustURL("https://api.first.example.test"),
 			Timeout:  5 * time.Second,
 		},
 	}
@@ -330,6 +334,37 @@ providers:
 	}
 }
 
+func TestLoadRejectsInvalidProviderBaseURL(t *testing.T) {
+	_, err := loadConfigErr(t, `
+http:
+  addr: ":9090"
+database:
+  driver: postgres
+  url: "postgres://example"
+worker:
+  interval: 3s
+  claim_limit: 10
+  concurrency: 4
+shutdown_timeout: 8s
+supported_pairs:
+  - EUR/USD
+providers:
+  - name: first
+    type: frankfurter
+    enabled: true
+    priority: 1
+    base_url: localhost:8080
+    timeout: 5s
+    rate_limit_per_second: 2
+`)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "provider \"first\": base_url scheme must be http or https") {
+		t.Fatalf("expected invalid provider base URL error, got %v", err)
+	}
+}
+
 func TestLoadDoesNotOverrideYAMLFromEnv(t *testing.T) {
 	t.Setenv("HTTP_ADDR", ":7070")
 	t.Setenv("DATABASE_URL", "postgres://env")
@@ -380,4 +415,12 @@ func loadConfigErr(t *testing.T, body string) (Config, error) {
 		t.Fatalf("write config: %v", err)
 	}
 	return LoadFromPath(path)
+}
+
+func mustURL(value string) url.URL {
+	parsed, err := url.Parse(value)
+	if err != nil {
+		panic(err)
+	}
+	return *parsed
 }

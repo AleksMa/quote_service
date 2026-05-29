@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -178,7 +179,7 @@ func TestGetLatestQuoteReturnsNumber(t *testing.T) {
 func TestSwaggerCORSForSimpleRequest(t *testing.T) {
 	store := newFakeStore()
 	store.latestErr = domain.ErrNotFound
-	handler := New(store, map[string]struct{}{"EUR/MXN": {}}, Options{SwaggerUIOrigin: testSwaggerUIOrigin})
+	handler := New(store, map[string]struct{}{"EUR/MXN": {}}, Options{SwaggerUIOrigin: mustURL(testSwaggerUIOrigin)})
 	req := httptest.NewRequest(http.MethodGet, "/quotes/latest/EUR/MXN", nil)
 	req.Header.Set("Origin", testSwaggerUIOrigin)
 	rec := httptest.NewRecorder()
@@ -191,7 +192,7 @@ func TestSwaggerCORSForSimpleRequest(t *testing.T) {
 }
 
 func TestSwaggerCORSPreflight(t *testing.T) {
-	handler := New(newFakeStore(), map[string]struct{}{"EUR/MXN": {}}, Options{SwaggerUIOrigin: testSwaggerUIOrigin})
+	handler := New(newFakeStore(), map[string]struct{}{"EUR/MXN": {}}, Options{SwaggerUIOrigin: mustURL(testSwaggerUIOrigin)})
 	req := httptest.NewRequest(http.MethodOptions, "/quote-updates", nil)
 	req.Header.Set("Origin", testSwaggerUIOrigin)
 	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
@@ -221,6 +222,14 @@ type fakeStore struct {
 
 func newFakeStore() *fakeStore {
 	return &fakeStore{idempotent: make(map[string]domain.UpdateRequest)}
+}
+
+func mustURL(value string) url.URL {
+	parsed, err := url.Parse(value)
+	if err != nil {
+		panic(err)
+	}
+	return *parsed
 }
 
 func (s *fakeStore) CreateUpdateRequest(ctx context.Context, pair domain.Pair, idempotencyKey string) (domain.UpdateRequest, bool, error) {

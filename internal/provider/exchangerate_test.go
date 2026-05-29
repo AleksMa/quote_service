@@ -11,7 +11,7 @@ import (
 )
 
 func TestExchangeRateClientFetchRate(t *testing.T) {
-	client := NewExchangeRateClient("exchangerate", "https://example.test", "secret", time.Second)
+	client := NewExchangeRateClient("exchangerate", mustURL("https://example.test"), "secret", time.Second)
 	client.httpClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path != "/v1/latest" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
@@ -36,7 +36,7 @@ func TestExchangeRateClientFetchRate(t *testing.T) {
 }
 
 func TestExchangeRateClientRequiresAPIKey(t *testing.T) {
-	client := NewExchangeRateClient("exchangerate", "https://example.test", "", time.Second)
+	client := NewExchangeRateClient("exchangerate", mustURL("https://example.test"), "", time.Second)
 
 	if _, err := client.FetchRate(context.Background(), domain.Pair{Raw: "EUR/USD", Base: "EUR", Quote: "USD"}); err == nil {
 		t.Fatal("expected error")
