@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 )
 
 type Status string
@@ -79,7 +80,7 @@ type UpdateRequest struct {
 	JobID      string
 	Pair       Pair
 	Status     Status
-	Price      string
+	Price      *decimal.Decimal
 	Provider   string
 	Error      string
 	CreatedAt  time.Time
@@ -91,7 +92,7 @@ type UpdateJob struct {
 	ID         string
 	Pair       Pair
 	Status     Status
-	Price      string
+	Price      *decimal.Decimal
 	Provider   string
 	Error      string
 	CreatedAt  time.Time
@@ -101,7 +102,7 @@ type UpdateJob struct {
 
 type LatestQuote struct {
 	Pair      Pair
-	Price     string
+	Price     decimal.Decimal
 	Provider  string
 	UpdatedAt time.Time
 	RequestID string

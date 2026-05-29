@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/AleksMa/quote_service/internal/domain"
+	"github.com/shopspring/decimal"
 )
 
 func TestStoreCreateUpdateRequestIsIdempotent(t *testing.T) {
@@ -116,7 +117,7 @@ func TestStoreClaimMarkSucceededAndLatestQuote(t *testing.T) {
 	}
 
 	updatedAt := time.Now().UTC().Truncate(time.Microsecond)
-	if err := store.MarkSucceeded(ctx, created.JobID, "1.2345", "test-provider", updatedAt); err != nil {
+	if err := store.MarkSucceeded(ctx, created.JobID, decimal.RequireFromString("1.2345"), "test-provider", updatedAt); err != nil {
 		t.Fatalf("MarkSucceeded returned error: %v", err)
 	}
 
@@ -124,7 +125,7 @@ func TestStoreClaimMarkSucceededAndLatestQuote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetUpdateRequest returned error: %v", err)
 	}
-	if updated.Status != domain.StatusSucceeded || updated.Price == "" || updated.Provider != "test-provider" {
+	if updated.Status != domain.StatusSucceeded || updated.Price == nil || !updated.Price.Equal(decimal.RequireFromString("1.2345")) || updated.Provider != "test-provider" {
 		t.Fatalf("unexpected succeeded request: %+v", updated)
 	}
 
@@ -132,7 +133,7 @@ func TestStoreClaimMarkSucceededAndLatestQuote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetLatestQuote returned error: %v", err)
 	}
-	if latest.Pair.Raw != pair.Raw || latest.Price == "" || latest.Provider != "test-provider" || latest.RequestID != created.ID {
+	if latest.Pair.Raw != pair.Raw || !latest.Price.Equal(decimal.RequireFromString("1.2345")) || latest.Provider != "test-provider" || latest.RequestID != created.ID {
 		t.Fatalf("unexpected latest quote: %+v", latest)
 	}
 
@@ -177,7 +178,7 @@ func TestStoreMarkFailed(t *testing.T) {
 		t.Fatalf("unexpected failed request: %+v", got)
 	}
 
-	err = store.MarkSucceeded(ctx, created.JobID, "9.9999", "late-provider", time.Now().UTC())
+	err = store.MarkSucceeded(ctx, created.JobID, decimal.RequireFromString("9.9999"), "late-provider", time.Now().UTC())
 	if !errors.Is(err, domain.ErrAlreadyFinished) {
 		t.Fatalf("expected ErrAlreadyFinished for terminal job, got %v", err)
 	}
@@ -186,7 +187,7 @@ func TestStoreMarkFailed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetUpdateRequest returned error after late success: %v", err)
 	}
-	if stillFailed.Status != domain.StatusFailed || stillFailed.Price != "" || stillFailed.Provider != "" || stillFailed.Error != "provider failed" {
+	if stillFailed.Status != domain.StatusFailed || stillFailed.Price != nil || stillFailed.Provider != "" || stillFailed.Error != "provider failed" {
 		t.Fatalf("terminal failed job was changed: %+v", stillFailed)
 	}
 }

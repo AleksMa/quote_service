@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/AleksMa/quote_service/internal/domain"
+	"github.com/shopspring/decimal"
 )
 
 const ExchangerateProviderName = "exchangerate"
@@ -34,7 +35,7 @@ func buildExchangerateRequest(ctx context.Context, cfg RequestConfig, pair domai
 	return req, nil
 }
 
-func decodeExchangerateResponse(resp *http.Response, cfg RequestConfig, pair domain.Pair) (string, error) {
+func decodeExchangerateResponse(resp *http.Response, cfg RequestConfig, pair domain.Pair) (decimal.Decimal, error) {
 	var body struct {
 		Success bool                   `json:"success"`
 		Rates   map[string]json.Number `json:"rates"`
@@ -43,16 +44,21 @@ func decodeExchangerateResponse(resp *http.Response, cfg RequestConfig, pair dom
 		} `json:"error"`
 	}
 	if err := decodeJSONResponse(resp, cfg.Name, &body); err != nil {
-		return "", err
+		return decimal.Decimal{}, err
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return "", statusError(resp, cfg.Name, body.Error.Message)
+		return decimal.Decimal{}, statusError(resp, cfg.Name, body.Error.Message)
 	}
 
 	if !body.Success || body.Error.Message != "" {
-		return "", fmt.Errorf("%s response error: %s", cfg.Name, body.Error.Message)
+		return decimal.Decimal{}, fmt.Errorf("%s response error: %s", cfg.Name, body.Error.Message)
 	}
 
-	return body.Rates[pair.Quote].String(), nil
+	rate, ok := body.Rates[pair.Quote]
+	if !ok {
+		return decimal.Decimal{}, fmt.Errorf("%s response does not contain rate", cfg.Name)
+	}
+
+	return parseDecimalRate(cfg.Name, rate)
 }

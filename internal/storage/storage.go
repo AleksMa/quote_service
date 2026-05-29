@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/AleksMa/quote_service/internal/domain"
+	"github.com/shopspring/decimal"
 )
 
 type Config struct {
@@ -20,7 +21,7 @@ type APIStore interface {
 
 type WorkerStore interface {
 	ClaimPending(ctx context.Context, limit int) ([]domain.UpdateJob, error)
-	MarkSucceeded(ctx context.Context, jobID string, price string, provider string, updatedAt time.Time) error
+	MarkSucceeded(ctx context.Context, jobID string, price decimal.Decimal, provider string, updatedAt time.Time) error
 	MarkFailed(ctx context.Context, jobID string, message string, finishedAt time.Time) error
 }
 

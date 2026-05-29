@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/AleksMa/quote_service/internal/domain"
+	"github.com/shopspring/decimal"
 )
 
 func TestFrankfurterClientFetchRate(t *testing.T) {
@@ -25,7 +26,7 @@ func TestFrankfurterClientFetchRate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchRate returned error: %v", err)
 	}
-	if rate.Price != "1.2345" || rate.Provider != "frankfurter" {
+	if !rate.Price.Equal(decimal.RequireFromString("1.2345")) || rate.Provider != "frankfurter" {
 		t.Fatalf("unexpected rate: %+v", rate)
 	}
 }

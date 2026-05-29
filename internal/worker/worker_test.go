@@ -11,6 +11,7 @@ import (
 
 	"github.com/AleksMa/quote_service/internal/domain"
 	"github.com/AleksMa/quote_service/internal/provider"
+	"github.com/shopspring/decimal"
 )
 
 func TestWorkerMarksSucceeded(t *testing.T) {
@@ -21,12 +22,12 @@ func TestWorkerMarksSucceeded(t *testing.T) {
 	}
 	store := &fakeWorkerStore{claimed: []domain.UpdateJob{job}}
 	fetchedAt := time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC)
-	provider := fakeProvider{rate: provider.Rate{Pair: job.Pair, Price: "1.1", Provider: "test", FetchedAt: fetchedAt}}
+	provider := fakeProvider{rate: provider.Rate{Pair: job.Pair, Price: decimal.RequireFromString("1.1"), Provider: "test", FetchedAt: fetchedAt}}
 
 	w := New(store, provider, Options{Concurrency: 1, Logger: discardLogger()})
 	w.processBatch(context.Background())
 
-	if store.succeededID != job.ID || store.succeededPrice != "1.1" || !store.succeededAt.Equal(fetchedAt) {
+	if store.succeededID != job.ID || !store.succeededPrice.Equal(decimal.RequireFromString("1.1")) || !store.succeededAt.Equal(fetchedAt) {
 		t.Fatalf("job was not marked succeeded: %+v", store)
 	}
 	if store.failedID != "" {
@@ -81,7 +82,7 @@ type fakeWorkerStore struct {
 	claimed        []domain.UpdateJob
 	claimLimit     int
 	succeededID    string
-	succeededPrice string
+	succeededPrice decimal.Decimal
 	succeededAt    time.Time
 	succeededCount int
 	failedID       string
@@ -96,7 +97,7 @@ func (s *fakeWorkerStore) ClaimPending(ctx context.Context, limit int) ([]domain
 	return s.claimed, nil
 }
 
-func (s *fakeWorkerStore) MarkSucceeded(ctx context.Context, id string, price string, providerName string, updatedAt time.Time) error {
+func (s *fakeWorkerStore) MarkSucceeded(ctx context.Context, id string, price decimal.Decimal, providerName string, updatedAt time.Time) error {
 	s.succeededID = id
 	s.succeededPrice = price
 	s.succeededAt = updatedAt
@@ -140,7 +141,7 @@ func (p *trackingProvider) FetchRate(ctx context.Context, pair domain.Pair) (pro
 	p.active--
 	p.mu.Unlock()
 
-	return provider.Rate{Pair: pair, Price: "1.1", Provider: "test", FetchedAt: time.Now().UTC()}, nil
+	return provider.Rate{Pair: pair, Price: decimal.RequireFromString("1.1"), Provider: "test", FetchedAt: time.Now().UTC()}, nil
 }
 
 func discardLogger() *slog.Logger {

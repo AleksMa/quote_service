@@ -121,8 +121,10 @@ components:
           type: string
           example: EUR/MXN
         price:
-          type: string
-          example: "20.1234567890"
+          type: number
+          format: decimal
+          description: Decimal quote value encoded as a JSON number.
+          example: 20.123456789
         provider:
           type: string
           example: frankfurter
@@ -144,8 +146,10 @@ components:
           type: string
           example: EUR/MXN
         price:
-          type: string
-          example: "20.1234567890"
+          type: number
+          format: decimal
+          description: Decimal quote value encoded as a JSON number.
+          example: 20.123456789
         provider:
           type: string
           example: frankfurter

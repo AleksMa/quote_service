@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/shopspring/decimal"
 
 	"github.com/AleksMa/quote_service/internal/domain"
 )
@@ -149,16 +150,21 @@ func (s *Store) GetUpdateRequest(ctx context.Context, id string) (domain.UpdateR
 
 func (s *Store) GetLatestQuote(ctx context.Context, pair domain.Pair) (domain.LatestQuote, error) {
 	var quote domain.LatestQuote
-	var rawPair, base, target string
+	var rawPair, base, target, price string
 	err := s.pool.QueryRow(ctx, `
 		SELECT pair, base_currency, quote_currency, price::text, provider, updated_at, request_id::text
 		FROM latest_quotes
 		WHERE pair = $1
-	`, pair.Raw).Scan(&rawPair, &base, &target, &quote.Price, &quote.Provider, &quote.UpdatedAt, &quote.RequestID)
+	`, pair.Raw).Scan(&rawPair, &base, &target, &price, &quote.Provider, &quote.UpdatedAt, &quote.RequestID)
 	if err != nil {
 		return domain.LatestQuote{}, translateNotFound(err, "get latest quote")
 	}
+	parsedPrice, err := parsePrice(price)
+	if err != nil {
+		return domain.LatestQuote{}, fmt.Errorf("get latest quote: %w", err)
+	}
 	quote.Pair = domain.Pair{Raw: rawPair, Base: base, Quote: target}
+	quote.Price = parsedPrice
 	return quote, nil
 }
 
@@ -197,7 +203,7 @@ func (s *Store) ClaimPending(ctx context.Context, limit int) ([]domain.UpdateJob
 	return jobs, nil
 }
 
-func (s *Store) MarkSucceeded(ctx context.Context, jobID string, price string, provider string, updatedAt time.Time) error {
+func (s *Store) MarkSucceeded(ctx context.Context, jobID string, price decimal.Decimal, provider string, updatedAt time.Time) error {
 	tag, err := s.pool.Exec(ctx, `
 		WITH updated AS (
 			UPDATE quote_update_jobs
@@ -225,7 +231,7 @@ func (s *Store) MarkSucceeded(ctx context.Context, jobID string, price string, p
 			updated_at = EXCLUDED.updated_at,
 			request_id = EXCLUDED.request_id,
 			job_id = EXCLUDED.job_id
-	`, jobID, domain.StatusSucceeded, price, provider, updatedAt, domain.StatusPending, domain.StatusProcessing)
+	`, jobID, domain.StatusSucceeded, price.String(), provider, updatedAt, domain.StatusPending, domain.StatusProcessing)
 	if err != nil {
 		return fmt.Errorf("mark job succeeded: %w", err)
 	}
@@ -395,9 +401,11 @@ func scanUpdate(row updateScanner) (domain.UpdateRequest, error) {
 
 	req.Pair = domain.Pair{Raw: rawPair, Base: base, Quote: quote}
 	req.Status = domain.Status(status)
-	if price.Valid {
-		req.Price = price.String
+	parsedPrice, err := parseNullablePrice(price)
+	if err != nil {
+		return domain.UpdateRequest{}, err
 	}
+	req.Price = parsedPrice
 	if provider.Valid {
 		req.Provider = provider.String
 	}
@@ -439,9 +447,11 @@ func scanJob(row updateScanner) (domain.UpdateJob, error) {
 
 	job.Pair = domain.Pair{Raw: rawPair, Base: base, Quote: quote}
 	job.Status = domain.Status(status)
-	if price.Valid {
-		job.Price = price.String
+	parsedPrice, err := parseNullablePrice(price)
+	if err != nil {
+		return domain.UpdateJob{}, err
 	}
+	job.Price = parsedPrice
 	if provider.Valid {
 		job.Provider = provider.String
 	}
@@ -455,6 +465,25 @@ func scanJob(row updateScanner) (domain.UpdateJob, error) {
 		job.FinishedAt = &finishedAt.Time
 	}
 	return job, nil
+}
+
+func parseNullablePrice(value sql.NullString) (*decimal.Decimal, error) {
+	if !value.Valid {
+		return nil, nil
+	}
+	price, err := parsePrice(value.String)
+	if err != nil {
+		return nil, err
+	}
+	return &price, nil
+}
+
+func parsePrice(value string) (decimal.Decimal, error) {
+	price, err := decimal.NewFromString(value)
+	if err != nil {
+		return decimal.Decimal{}, fmt.Errorf("parse price %q: %w", value, err)
+	}
+	return price, nil
 }
 
 func translateNotFound(err error, op string) error {

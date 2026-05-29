@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/AleksMa/quote_service/internal/domain"
+	"github.com/shopspring/decimal"
 )
 
 type HTTPClientConfig struct {
@@ -28,7 +28,7 @@ type RequestConfig struct {
 }
 
 type RequestBuilder func(ctx context.Context, cfg RequestConfig, pair domain.Pair) (*http.Request, error)
-type ResponseDecoder func(resp *http.Response, cfg RequestConfig, pair domain.Pair) (string, error)
+type ResponseDecoder func(resp *http.Response, cfg RequestConfig, pair domain.Pair) (decimal.Decimal, error)
 
 type HTTPClient struct {
 	name           string
@@ -88,14 +88,23 @@ func (c *HTTPClient) FetchRate(ctx context.Context, pair domain.Pair) (Rate, err
 	}, nil
 }
 
-func validatePrice(providerName string, price string) error {
-	if price == "" {
-		return fmt.Errorf("%s response does not contain rate", providerName)
-	}
-	if parsed, err := strconv.ParseFloat(price, 64); err != nil || parsed <= 0 {
-		return fmt.Errorf("%s returned invalid rate %q", providerName, price)
+func validatePrice(providerName string, price decimal.Decimal) error {
+	if !price.GreaterThan(decimal.Zero) {
+		return fmt.Errorf("%s returned invalid rate %q", providerName, price.String())
 	}
 	return nil
+}
+
+func parseDecimalRate(providerName string, rate json.Number) (decimal.Decimal, error) {
+	raw := rate.String()
+	if raw == "" {
+		return decimal.Decimal{}, fmt.Errorf("%s response does not contain rate", providerName)
+	}
+	price, err := decimal.NewFromString(raw)
+	if err != nil {
+		return decimal.Decimal{}, fmt.Errorf("%s returned invalid rate %q", providerName, raw)
+	}
+	return price, nil
 }
 
 func decodeJSONResponse(resp *http.Response, providerName string, target any) error {

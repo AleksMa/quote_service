@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/AleksMa/quote_service/internal/domain"
+	"github.com/shopspring/decimal"
 )
 
 const testSwaggerUIOrigin = "http://localhost:8081"
@@ -99,7 +100,7 @@ func TestGetUpdateRequestSucceededReturnsQuote(t *testing.T) {
 		ID:         "3f90b1d3-e261-4ac6-b7ac-1a66dc67f747",
 		Pair:       domain.Pair{Raw: "EUR/MXN", Base: "EUR", Quote: "MXN"},
 		Status:     domain.StatusSucceeded,
-		Price:      "20.1",
+		Price:      decimalPtr("20.1"),
 		Provider:   "frankfurter",
 		FinishedAt: &finishedAt,
 	}
@@ -116,9 +117,17 @@ func TestGetUpdateRequestSucceededReturnsQuote(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if response.Price != "20.1" || response.UpdatedAt == nil {
+	if response.Price.String() != "20.1" || response.UpdatedAt == nil {
 		t.Fatalf("unexpected response: %+v", response)
 	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"price":20.1`)) {
+		t.Fatalf("expected price to be encoded as JSON number, got %s", rec.Body.String())
+	}
+}
+
+func decimalPtr(value string) *decimal.Decimal {
+	price := decimal.RequireFromString(value)
+	return &price
 }
 
 func TestGetLatestQuoteMissingReturnsNotFound(t *testing.T) {
@@ -132,6 +141,37 @@ func TestGetLatestQuoteMissingReturnsNotFound(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestGetLatestQuoteReturnsNumber(t *testing.T) {
+	updatedAt := time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC)
+	store := newFakeStore()
+	store.latest = domain.LatestQuote{
+		Pair:      domain.Pair{Raw: "EUR/MXN", Base: "EUR", Quote: "MXN"},
+		Price:     decimal.RequireFromString("20.1234567890"),
+		Provider:  "frankfurter",
+		UpdatedAt: updatedAt,
+		RequestID: "3f90b1d3-e261-4ac6-b7ac-1a66dc67f747",
+	}
+	handler := New(store, map[string]struct{}{"EUR/MXN": {}})
+	req := httptest.NewRequest(http.MethodGet, "/quotes/latest/EUR/MXN", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response latestQuoteResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Price.String() != "20.123456789" {
+		t.Fatalf("unexpected response: %+v", response)
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"price":20.123456789`)) {
+		t.Fatalf("expected price to be encoded as JSON number, got %s", rec.Body.String())
 	}
 }
 

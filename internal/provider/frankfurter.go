@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/AleksMa/quote_service/internal/domain"
+	"github.com/shopspring/decimal"
 )
 
 const FrankfurterProviderName = "frankfurter"
@@ -33,17 +34,17 @@ func buildFrankfurterRequest(ctx context.Context, cfg RequestConfig, pair domain
 	return req, nil
 }
 
-func decodeFrankfurterResponse(resp *http.Response, cfg RequestConfig, pair domain.Pair) (string, error) {
+func decodeFrankfurterResponse(resp *http.Response, cfg RequestConfig, pair domain.Pair) (decimal.Decimal, error) {
 	var body struct {
 		Rate    json.Number `json:"rate"`
 		Message string      `json:"message"`
 	}
 	if err := decodeJSONResponse(resp, cfg.Name, &body); err != nil {
-		return "", err
+		return decimal.Decimal{}, err
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return "", statusError(resp, cfg.Name, body.Message)
+		return decimal.Decimal{}, statusError(resp, cfg.Name, body.Message)
 	}
-	return body.Rate.String(), nil
+	return parseDecimalRate(cfg.Name, body.Rate)
 }

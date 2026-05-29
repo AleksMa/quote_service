@@ -153,7 +153,7 @@ func (h *Handler) latestQuote(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, latestQuoteResponse{
 		Pair:      quote.Pair.Raw,
-		Price:     quote.Price,
+		Price:     json.Number(quote.Price.String()),
 		Provider:  quote.Provider,
 		UpdatedAt: quote.UpdatedAt,
 		RequestID: quote.RequestID,
@@ -194,18 +194,18 @@ type quoteUpdateResponse struct {
 	Status              domain.Status `json:"status"`
 	IdempotencyReplayed *bool         `json:"idempotency_replayed,omitempty"`
 	Pair                string        `json:"pair,omitempty"`
-	Price               string        `json:"price,omitempty"`
+	Price               json.Number   `json:"price,omitempty"`
 	Provider            string        `json:"provider,omitempty"`
 	UpdatedAt           *time.Time    `json:"updated_at,omitempty"`
 	Error               string        `json:"error,omitempty"`
 }
 
 type latestQuoteResponse struct {
-	Pair      string    `json:"pair"`
-	Price     string    `json:"price"`
-	Provider  string    `json:"provider"`
-	UpdatedAt time.Time `json:"updated_at"`
-	RequestID string    `json:"request_id"`
+	Pair      string      `json:"pair"`
+	Price     json.Number `json:"price"`
+	Provider  string      `json:"provider"`
+	UpdatedAt time.Time   `json:"updated_at"`
+	RequestID string      `json:"request_id"`
 }
 
 func updateResponse(update domain.UpdateRequest) quoteUpdateResponse {
@@ -213,9 +213,11 @@ func updateResponse(update domain.UpdateRequest) quoteUpdateResponse {
 		RequestID: update.ID,
 		Status:    update.Status,
 		Pair:      update.Pair.Raw,
-		Price:     update.Price,
 		Provider:  update.Provider,
 		Error:     update.Error,
+	}
+	if update.Price != nil {
+		response.Price = json.Number(update.Price.String())
 	}
 	if update.FinishedAt != nil {
 		response.UpdatedAt = update.FinishedAt

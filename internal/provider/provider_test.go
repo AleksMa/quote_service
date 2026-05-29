@@ -11,13 +11,14 @@ import (
 
 	"github.com/AleksMa/quote_service/internal/config"
 	"github.com/AleksMa/quote_service/internal/domain"
+	"github.com/shopspring/decimal"
 )
 
 func TestChainFallsBackToNextProvider(t *testing.T) {
 	pair := domain.Pair{Raw: "EUR/USD", Base: "EUR", Quote: "USD"}
 	chain, err := NewChain([]NamedClient{
 		{Name: "first", Client: staticProvider{err: errors.New("down")}},
-		{Name: "second", Client: staticProvider{rate: Rate{Pair: pair, Price: "1.2", Provider: "second", FetchedAt: time.Now()}}},
+		{Name: "second", Client: staticProvider{rate: Rate{Pair: pair, Price: decimal.RequireFromString("1.2"), Provider: "second", FetchedAt: time.Now()}}},
 	})
 	if err != nil {
 		t.Fatalf("NewChain returned error: %v", err)
@@ -27,7 +28,7 @@ func TestChainFallsBackToNextProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchRate returned error: %v", err)
 	}
-	if rate.Provider != "second" || rate.Price != "1.2" {
+	if rate.Provider != "second" || !rate.Price.Equal(decimal.RequireFromString("1.2")) {
 		t.Fatalf("unexpected rate: %+v", rate)
 	}
 }

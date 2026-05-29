@@ -8,11 +8,12 @@ import (
 	"time"
 
 	"github.com/AleksMa/quote_service/internal/domain"
+	"github.com/shopspring/decimal"
 )
 
 type Rate struct {
 	Pair      domain.Pair
-	Price     string
+	Price     decimal.Decimal
 	Provider  string
 	FetchedAt time.Time
 }
