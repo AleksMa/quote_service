@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -18,13 +19,19 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
 	cfg, err := config.Load()
 	if err != nil {
-		logger.Error("load config", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("load config: %w", err)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -35,15 +42,13 @@ func main() {
 		URL:    cfg.Database.URL,
 	})
 	if err != nil {
-		logger.Error("open storage", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("open storage: %w", err)
 	}
 	defer quoteStore.Close()
 
 	rateProvider, err := provider.BuildChain(cfg.Providers, logger)
 	if err != nil {
-		logger.Error("build provider chain", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("build provider chain: %w", err)
 	}
 	backgroundWorker := worker.New(quoteStore, rateProvider, worker.Options{
 		Interval:    cfg.Worker.Interval,
@@ -73,16 +78,15 @@ func main() {
 	case <-ctx.Done():
 	case err := <-errCh:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("http server failed", "error", err)
-			os.Exit(1)
+			return fmt.Errorf("http server failed: %w", err)
 		}
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		logger.Error("http server shutdown", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("http server shutdown: %w", err)
 	}
 	logger.Info("http server stopped")
+	return nil
 }

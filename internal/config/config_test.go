@@ -105,6 +105,34 @@ func TestParseProviderTypeRequiresKnownExactValue(t *testing.T) {
 	}
 }
 
+func TestValidateProvidersDoesNotMutate(t *testing.T) {
+	providers := []ProviderConfig{
+		{
+			Name:     "second",
+			Type:     ProviderTypeExchangeRate,
+			Enabled:  true,
+			Priority: 20,
+			BaseURL:  "https://api.second.example.test",
+			Timeout:  5 * time.Second,
+		},
+		{
+			Name:     "first",
+			Type:     ProviderTypeFrankfurter,
+			Enabled:  true,
+			Priority: 10,
+			BaseURL:  "https://api.first.example.test",
+			Timeout:  5 * time.Second,
+		},
+	}
+
+	if err := validateProviders(providers); err != nil {
+		t.Fatalf("validateProviders returned error: %v", err)
+	}
+	if providers[0].Name != "second" || providers[1].Name != "first" {
+		t.Fatalf("validateProviders mutated provider order: %+v", providers)
+	}
+}
+
 func TestLoadRequiresExistingFile(t *testing.T) {
 	_, err := LoadFromPath(filepath.Join(t.TempDir(), "missing.yaml"))
 	if err == nil {

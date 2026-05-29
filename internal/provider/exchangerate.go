@@ -9,21 +9,22 @@ import (
 	"time"
 
 	"github.com/AleksMa/quote_service/internal/domain"
+	"github.com/pkg/errors"
 	"github.com/shopspring/decimal"
 )
 
-func NewExchangerateClient(name string, baseURL string, apiKey string, timeout time.Duration) *HTTPClient {
+func NewExchangeRateClient(name string, baseURL string, apiKey string, timeout time.Duration) *HTTPClient {
 	return NewHTTPClient(HTTPClientConfig{
 		Name:           name,
 		BaseURL:        baseURL,
 		Timeout:        timeout,
 		APIKey:         apiKey,
-		BuildRequest:   buildExchangerateRequest,
-		DecodeResponse: decodeExchangerateResponse,
+		BuildRequest:   buildExchangeRateRequest,
+		DecodeResponse: decodeExchangeRateResponse,
 	})
 }
 
-func buildExchangerateRequest(ctx context.Context, cfg RequestConfig, pair domain.Pair) (*http.Request, error) {
+func buildExchangeRateRequest(ctx context.Context, cfg RequestConfig, pair domain.Pair) (*http.Request, error) {
 	endpoint := fmt.Sprintf("%s/v1/latest?access_key=%s&base=%s&symbols=%s", cfg.BaseURL, cfg.APIKey, url.PathEscape(pair.Base), url.PathEscape(pair.Quote))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -33,7 +34,7 @@ func buildExchangerateRequest(ctx context.Context, cfg RequestConfig, pair domai
 	return req, nil
 }
 
-func decodeExchangerateResponse(resp *http.Response, cfg RequestConfig, pair domain.Pair) (decimal.Decimal, error) {
+func decodeExchangeRateResponse(resp *http.Response, cfg RequestConfig, pair domain.Pair) (decimal.Decimal, error) {
 	var body struct {
 		Success bool                   `json:"success"`
 		Rates   map[string]json.Number `json:"rates"`
@@ -42,10 +43,10 @@ func decodeExchangerateResponse(resp *http.Response, cfg RequestConfig, pair dom
 		} `json:"error"`
 	}
 	if err := decodeJSONResponse(resp, cfg.Name, &body); err != nil {
-		return decimal.Decimal{}, err
+		return decimal.Decimal{}, errors.Wrap(err, "decode exchangerate response")
 	}
 
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+	if resp.StatusCode != http.StatusOK {
 		return decimal.Decimal{}, statusError(resp, cfg.Name, body.Error.Message)
 	}
 

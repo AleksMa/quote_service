@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/AleksMa/quote_service/internal/domain"
+	"github.com/pkg/errors"
 	"github.com/shopspring/decimal"
 )
 
@@ -38,10 +39,10 @@ func decodeFrankfurterResponse(resp *http.Response, cfg RequestConfig, pair doma
 		Message string      `json:"message"`
 	}
 	if err := decodeJSONResponse(resp, cfg.Name, &body); err != nil {
-		return decimal.Decimal{}, err
+		return decimal.Decimal{}, errors.Wrap(err, "decode frankfurter response")
 	}
 
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+	if resp.StatusCode != http.StatusOK {
 		return decimal.Decimal{}, statusError(resp, cfg.Name, body.Message)
 	}
 	return parseDecimalRate(cfg.Name, body.Rate)

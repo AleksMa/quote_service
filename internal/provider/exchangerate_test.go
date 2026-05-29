@@ -10,8 +10,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func TestExchangerateClientFetchRate(t *testing.T) {
-	client := NewExchangerateClient("exchangerate", "https://example.test", "secret", time.Second)
+func TestExchangeRateClientFetchRate(t *testing.T) {
+	client := NewExchangeRateClient("exchangerate", "https://example.test", "secret", time.Second)
 	client.httpClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path != "/v1/latest" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
@@ -35,8 +35,8 @@ func TestExchangerateClientFetchRate(t *testing.T) {
 	}
 }
 
-func TestExchangerateClientRequiresAPIKey(t *testing.T) {
-	client := NewExchangerateClient("exchangerate", "https://example.test", "", time.Second)
+func TestExchangeRateClientRequiresAPIKey(t *testing.T) {
+	client := NewExchangeRateClient("exchangerate", "https://example.test", "", time.Second)
 
 	if _, err := client.FetchRate(context.Background(), domain.Pair{Raw: "EUR/USD", Base: "EUR", Quote: "USD"}); err == nil {
 		t.Fatal("expected error")

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/AleksMa/quote_service/internal/domain"
+	"github.com/pkg/errors"
 	"github.com/shopspring/decimal"
 )
 
@@ -76,7 +77,9 @@ func (c *HTTPClient) FetchRate(ctx context.Context, pair domain.Pair) (Rate, err
 	if err != nil {
 		return Rate{}, err
 	}
-	if err := validatePrice(c.name, price); err != nil {
+	
+	err = validatePrice(c.name, price)
+	if err != nil {
 		return Rate{}, err
 	}
 
@@ -102,7 +105,7 @@ func parseDecimalRate(providerName string, rate json.Number) (decimal.Decimal, e
 	}
 	price, err := decimal.NewFromString(raw)
 	if err != nil {
-		return decimal.Decimal{}, fmt.Errorf("%s returned invalid rate %q", providerName, raw)
+		return decimal.Decimal{}, errors.Wrap(err, fmt.Sprintf("%s returned invalid rate %q", providerName, raw))
 	}
 	return price, nil
 }

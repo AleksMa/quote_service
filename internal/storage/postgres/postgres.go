@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	pkgerrors "github.com/pkg/errors"
 	"github.com/shopspring/decimal"
 
 	"github.com/AleksMa/quote_service/internal/domain"
@@ -481,7 +482,7 @@ func parseNullablePrice(value sql.NullString) (*decimal.Decimal, error) {
 func parsePrice(value string) (decimal.Decimal, error) {
 	price, err := decimal.NewFromString(value)
 	if err != nil {
-		return decimal.Decimal{}, fmt.Errorf("parse price %q: %w", value, err)
+		return decimal.Decimal{}, pkgerrors.Wrap(err, fmt.Sprintf("parse price %q", value))
 	}
 	return price, nil
 }

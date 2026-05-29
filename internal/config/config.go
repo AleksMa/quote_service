@@ -56,7 +56,7 @@ type ProviderType string
 
 const (
 	ProviderTypeFrankfurter  ProviderType = "frankfurter"
-	ProviderTypeExchangerate ProviderType = "exchangerate"
+	ProviderTypeExchangeRate ProviderType = "exchangerate"
 )
 
 type rawConfig struct {
@@ -87,126 +87,204 @@ func LoadFromPath(path string) (Config, error) {
 		return Config{}, fmt.Errorf("parse config %q: %w", path, err)
 	}
 
-	return validate(raw)
+	return newConfig(raw)
 }
 
-func validate(raw rawConfig) (Config, error) {
-	if strings.TrimSpace(raw.HTTP.Addr) == "" {
-		return Config{}, fmt.Errorf("http.addr is required")
-	}
-	raw.HTTP.Addr = strings.TrimSpace(raw.HTTP.Addr)
-	swaggerUIOrigin, err := validateOptionalOrigin("http.swagger_ui_origin", raw.HTTP.SwaggerUIOrigin)
+func newConfig(raw rawConfig) (Config, error) {
+	cfg, err := normalizeConfig(raw)
 	if err != nil {
 		return Config{}, err
 	}
-	raw.HTTP.SwaggerUIOrigin = swaggerUIOrigin
+	if err := cfg.validate(); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
+}
 
-	raw.Database.Driver = strings.TrimSpace(raw.Database.Driver)
-	if raw.Database.Driver == "" {
-		return Config{}, fmt.Errorf("database.driver is required")
-	}
-	raw.Database.URL = strings.TrimSpace(raw.Database.URL)
-	if raw.Database.URL == "" {
-		return Config{}, fmt.Errorf("database.url is required")
-	}
-
-	if raw.Worker.Interval <= 0 {
-		return Config{}, fmt.Errorf("worker.interval must be greater than zero")
-	}
-	if raw.Worker.ClaimLimit < 1 {
-		return Config{}, fmt.Errorf("worker.claim_limit must be greater than zero")
-	}
-	if raw.Worker.Concurrency < 1 {
-		return Config{}, fmt.Errorf("worker.concurrency must be greater than zero")
-	}
-
-	if raw.ShutdownTimeout.Duration <= 0 {
-		return Config{}, fmt.Errorf("shutdown_timeout must be greater than zero")
-	}
-
-	if len(raw.SupportedPairs) == 0 {
-		return Config{}, fmt.Errorf("supported_pairs must contain at least one pair")
-	}
-	supportedPairs, err := domain.PairSet(raw.SupportedPairs)
-	if err != nil {
-		return Config{}, fmt.Errorf("load supported pairs: %w", err)
-	}
-
-	providers, err := validateProviders(raw.Providers)
+func normalizeConfig(raw rawConfig) (Config, error) {
+	supportedPairs, err := normalizeSupportedPairs(raw.SupportedPairs)
 	if err != nil {
 		return Config{}, err
 	}
 
 	return Config{
-		HTTP:            raw.HTTP,
-		Database:        raw.Database,
+		HTTP:            normalizeHTTPConfig(raw.HTTP),
+		Database:        normalizeDatabaseConfig(raw.Database),
 		Worker:          raw.Worker,
-		Providers:       providers,
+		Providers:       normalizeProviders(raw.Providers),
 		SupportedPairs:  supportedPairs,
 		ShutdownTimeout: raw.ShutdownTimeout.Duration,
 	}, nil
 }
 
-func validateProviders(providers []ProviderConfig) ([]ProviderConfig, error) {
+func normalizeHTTPConfig(cfg HTTPConfig) HTTPConfig {
+	return HTTPConfig{
+		Addr:            strings.TrimSpace(cfg.Addr),
+		SwaggerUIOrigin: strings.TrimSpace(cfg.SwaggerUIOrigin),
+	}
+}
+
+func normalizeDatabaseConfig(cfg DatabaseConfig) DatabaseConfig {
+	return DatabaseConfig{
+		Driver: strings.TrimSpace(cfg.Driver),
+		URL:    strings.TrimSpace(cfg.URL),
+	}
+}
+
+func normalizeProviders(providers []ProviderConfig) []ProviderConfig {
+	normalized := make([]ProviderConfig, len(providers))
+	for i, provider := range providers {
+		normalized[i] = normalizeProviderConfig(provider)
+	}
+	sort.SliceStable(normalized, func(i, j int) bool {
+		return normalized[i].Priority < normalized[j].Priority
+	})
+	return normalized
+}
+
+func normalizeProviderConfig(cfg ProviderConfig) ProviderConfig {
+	return ProviderConfig{
+		Name:               strings.TrimSpace(cfg.Name),
+		Type:               NormalizeProviderType(cfg.Type.String()),
+		Enabled:            cfg.Enabled,
+		Priority:           cfg.Priority,
+		BaseURL:            strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
+		Timeout:            cfg.Timeout,
+		RateLimitPerSecond: cfg.RateLimitPerSecond,
+		APIKey:             strings.TrimSpace(cfg.APIKey),
+		APIKeyEnv:          strings.TrimSpace(cfg.APIKeyEnv),
+	}
+}
+
+func normalizeSupportedPairs(pairs []string) (map[string]struct{}, error) {
+	supportedPairs, err := domain.PairSet(pairs)
+	if err != nil {
+		return nil, fmt.Errorf("load supported pairs: %w", err)
+	}
+	return supportedPairs, nil
+}
+
+func (c Config) validate() error {
+	if err := c.HTTP.validate(); err != nil {
+		return err
+	}
+	if err := c.Database.validate(); err != nil {
+		return err
+	}
+	if err := c.Worker.validate(); err != nil {
+		return err
+	}
+	if c.ShutdownTimeout <= 0 {
+		return fmt.Errorf("shutdown_timeout must be greater than zero")
+	}
+	if len(c.SupportedPairs) == 0 {
+		return fmt.Errorf("supported_pairs must contain at least one pair")
+	}
+	if err := validateProviders(c.Providers); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c HTTPConfig) validate() error {
+	if c.Addr == "" {
+		return fmt.Errorf("http.addr is required")
+	}
+	return validateOptionalOrigin("http.swagger_ui_origin", c.SwaggerUIOrigin)
+}
+
+func (c DatabaseConfig) validate() error {
+	if c.Driver == "" {
+		return fmt.Errorf("database.driver is required")
+	}
+	if c.URL == "" {
+		return fmt.Errorf("database.url is required")
+	}
+	return nil
+}
+
+func (c WorkerConfig) validate() error {
+	if c.Interval <= 0 {
+		return fmt.Errorf("worker.interval must be greater than zero")
+	}
+	if c.ClaimLimit < 1 {
+		return fmt.Errorf("worker.claim_limit must be greater than zero")
+	}
+	if c.Concurrency < 1 {
+		return fmt.Errorf("worker.concurrency must be greater than zero")
+	}
+	return nil
+}
+
+func validateProviders(providers []ProviderConfig) error {
 	if len(providers) == 0 {
-		return nil, fmt.Errorf("providers must contain at least one provider")
+		return fmt.Errorf("providers must contain at least one provider")
 	}
 
 	enabledCount := 0
 	names := make(map[string]struct{}, len(providers))
-	for i := range providers {
-		provider := &providers[i]
-		provider.Name = strings.TrimSpace(provider.Name)
-		provider.BaseURL = strings.TrimRight(strings.TrimSpace(provider.BaseURL), "/")
-		provider.APIKey = strings.TrimSpace(provider.APIKey)
-		provider.APIKeyEnv = strings.TrimSpace(provider.APIKeyEnv)
-
-		if provider.Name == "" {
-			return nil, fmt.Errorf("provider %d name is required", i)
+	for i, provider := range providers {
+		if err := provider.validate(); err != nil {
+			if provider.Name == "" {
+				return fmt.Errorf("provider %d: %w", i, err)
+			}
+			return fmt.Errorf("provider %q: %w", provider.Name, err)
 		}
 
 		if _, ok := names[provider.Name]; ok {
-			return nil, fmt.Errorf("provider %q is duplicated", provider.Name)
+			return fmt.Errorf("provider %q is duplicated", provider.Name)
 		}
 		names[provider.Name] = struct{}{}
 
-		providerType, err := ParseProviderType(provider.Type.String())
-		if err != nil {
-			return nil, fmt.Errorf("provider %q: %w", provider.Name, err)
-		}
-		provider.Type = providerType
-		if provider.BaseURL == "" {
-			return nil, fmt.Errorf("provider %q base_url is required", provider.Name)
-		}
-		if provider.Timeout <= 0 {
-			return nil, fmt.Errorf("provider %q timeout must be greater than zero", provider.Name)
-		}
-		if provider.RateLimitPerSecond < 0 {
-			return nil, fmt.Errorf("provider %q rate_limit_per_second cannot be negative", provider.Name)
-		}
 		if provider.Enabled {
 			enabledCount++
 		}
 	}
 	if enabledCount == 0 {
-		return nil, fmt.Errorf("at least one provider must be enabled")
+		return fmt.Errorf("at least one provider must be enabled")
 	}
+	return nil
+}
 
-	sort.SliceStable(providers, func(i, j int) bool {
-		return providers[i].Priority < providers[j].Priority
-	})
-	return providers, nil
+func (c ProviderConfig) validate() error {
+	if c.Name == "" {
+		return fmt.Errorf("name is required")
+	}
+	if err := c.Type.validate(); err != nil {
+		return err
+	}
+	if c.BaseURL == "" {
+		return fmt.Errorf("base_url is required")
+	}
+	if c.Timeout <= 0 {
+		return fmt.Errorf("timeout must be greater than zero")
+	}
+	if c.RateLimitPerSecond < 0 {
+		return fmt.Errorf("rate_limit_per_second cannot be negative")
+	}
+	return nil
 }
 
 func ParseProviderType(value string) (ProviderType, error) {
-	normalized := ProviderType(strings.TrimSpace(value))
-	switch normalized {
-	case ProviderTypeFrankfurter, ProviderTypeExchangerate:
-		return normalized, nil
+	normalized := NormalizeProviderType(value)
+	if err := normalized.validate(); err != nil {
+		return "", err
+	}
+	return normalized, nil
+}
+
+func NormalizeProviderType(value string) ProviderType {
+	return ProviderType(strings.TrimSpace(value))
+}
+
+func (t ProviderType) validate() error {
+	switch t {
+	case ProviderTypeFrankfurter, ProviderTypeExchangeRate:
+		return nil
 	case "":
-		return "", fmt.Errorf("provider type is required")
+		return fmt.Errorf("provider type is required")
 	default:
-		return "", fmt.Errorf("unsupported provider type %q", value)
+		return fmt.Errorf("unsupported provider type %q", t)
 	}
 }
 
@@ -214,26 +292,25 @@ func (t ProviderType) String() string {
 	return string(t)
 }
 
-func validateOptionalOrigin(field string, value string) (string, error) {
-	value = strings.TrimSpace(value)
+func validateOptionalOrigin(field string, value string) error {
 	if value == "" {
-		return "", nil
+		return nil
 	}
 
 	parsed, err := url.Parse(value)
 	if err != nil {
-		return "", fmt.Errorf("%s must be a valid URL: %w", field, err)
+		return fmt.Errorf("%s must be a valid URL: %w", field, err)
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return "", fmt.Errorf("%s scheme must be http or https", field)
+		return fmt.Errorf("%s scheme must be http or https", field)
 	}
 	if parsed.Host == "" {
-		return "", fmt.Errorf("%s host is required", field)
+		return fmt.Errorf("%s host is required", field)
 	}
 	if parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", fmt.Errorf("%s must be an origin without user info, path, query, or fragment", field)
+		return fmt.Errorf("%s must be an origin without user info, path, query, or fragment", field)
 	}
-	return value, nil
+	return nil
 }
 
 func (c ProviderConfig) ResolvedAPIKey() string {
@@ -300,18 +377,6 @@ func (p *ProviderConfig) UnmarshalYAML(value *yaml.Node) error {
 	p.RateLimitPerSecond = raw.RateLimitPerSecond
 	p.APIKey = raw.APIKey
 	p.APIKeyEnv = raw.APIKeyEnv
-	return nil
-}
-
-func (t *ProviderType) UnmarshalYAML(value *yaml.Node) error {
-	if value.Kind != yaml.ScalarNode {
-		return fmt.Errorf("provider type must be a scalar")
-	}
-	providerType, err := ParseProviderType(value.Value)
-	if err != nil {
-		return err
-	}
-	*t = providerType
 	return nil
 }
 
