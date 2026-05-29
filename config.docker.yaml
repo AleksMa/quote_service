@@ -1,5 +1,6 @@
 http:
   addr: ":8080"
+  swagger_ui_origin: "http://localhost:8081"
 
 database:
   driver: postgres

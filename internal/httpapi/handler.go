@@ -17,18 +17,23 @@ type Handler struct {
 	supportedPairs map[string]struct{}
 }
 
-const swaggerUIOrigin = "http://localhost:8081"
+type Options struct {
+	SwaggerUIOrigin string
+}
 
-func New(store storage.APIStore, supportedPairs map[string]struct{}) http.Handler {
+func New(store storage.APIStore, supportedPairs map[string]struct{}, opts ...Options) http.Handler {
 	h := &Handler{store: store, supportedPairs: supportedPairs}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/quote-updates", h.quoteUpdates)
 	mux.HandleFunc("/quote-updates/", h.quoteUpdateByID)
 	mux.HandleFunc("/quotes/latest/", h.latestQuote)
-	return withSwaggerCORS(mux)
+	if len(opts) > 0 && opts[0].SwaggerUIOrigin != "" {
+		return withSwaggerCORS(mux, opts[0].SwaggerUIOrigin)
+	}
+	return mux
 }
 
-func withSwaggerCORS(next http.Handler) http.Handler {
+func withSwaggerCORS(next http.Handler, swaggerUIOrigin string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Origin") == swaggerUIOrigin {
 			w.Header().Set("Access-Control-Allow-Origin", swaggerUIOrigin)

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -24,7 +25,8 @@ type Config struct {
 }
 
 type HTTPConfig struct {
-	Addr string `yaml:"addr"`
+	Addr            string `yaml:"addr"`
+	SwaggerUIOrigin string `yaml:"swagger_ui_origin"`
 }
 
 type DatabaseConfig struct {
@@ -86,6 +88,11 @@ func validate(raw rawConfig) (Config, error) {
 		return Config{}, fmt.Errorf("http.addr is required")
 	}
 	raw.HTTP.Addr = strings.TrimSpace(raw.HTTP.Addr)
+	swaggerUIOrigin, err := validateOptionalOrigin("http.swagger_ui_origin", raw.HTTP.SwaggerUIOrigin)
+	if err != nil {
+		return Config{}, err
+	}
+	raw.HTTP.SwaggerUIOrigin = swaggerUIOrigin
 
 	raw.Database.Driver = strings.TrimSpace(raw.Database.Driver)
 	if raw.Database.Driver == "" {
@@ -149,7 +156,7 @@ func validateProviders(providers []ProviderConfig) ([]ProviderConfig, error) {
 		provider.APIKeyEnv = strings.TrimSpace(provider.APIKeyEnv)
 
 		if provider.Name == "" {
-			return nil, fmt.Errorf("provider %q name is required", i)
+			return nil, fmt.Errorf("provider %d name is required", i)
 		}
 
 		if _, ok := names[provider.Name]; ok {
@@ -181,6 +188,28 @@ func validateProviders(providers []ProviderConfig) ([]ProviderConfig, error) {
 		return providers[i].Priority < providers[j].Priority
 	})
 	return providers, nil
+}
+
+func validateOptionalOrigin(field string, value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return "", fmt.Errorf("%s must be a valid URL: %w", field, err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("%s scheme must be http or https", field)
+	}
+	if parsed.Host == "" {
+		return "", fmt.Errorf("%s host is required", field)
+	}
+	if parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("%s must be an origin without user info, path, query, or fragment", field)
+	}
+	return value, nil
 }
 
 func (c ProviderConfig) ResolvedAPIKey() string {

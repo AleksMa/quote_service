@@ -73,6 +73,8 @@ Worker settings:
 - `worker.concurrency`: maximum jobs processed in parallel.
 - `worker.interval`: worker tick interval in seconds.
 
+`http.swagger_ui_origin` enables the minimal CORS headers needed by the local Swagger UI container.
+
 ## Details
 
 ### Strengths

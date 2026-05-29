@@ -13,6 +13,8 @@ import (
 	"github.com/AleksMa/quote_service/internal/domain"
 )
 
+const testSwaggerUIOrigin = "http://localhost:8081"
+
 func TestCreateUpdateRequest(t *testing.T) {
 	store := newFakeStore()
 	handler := New(store, map[string]struct{}{"EUR/MXN": {}})
@@ -136,22 +138,22 @@ func TestGetLatestQuoteMissingReturnsNotFound(t *testing.T) {
 func TestSwaggerCORSForSimpleRequest(t *testing.T) {
 	store := newFakeStore()
 	store.latestErr = domain.ErrNotFound
-	handler := New(store, map[string]struct{}{"EUR/MXN": {}})
+	handler := New(store, map[string]struct{}{"EUR/MXN": {}}, Options{SwaggerUIOrigin: testSwaggerUIOrigin})
 	req := httptest.NewRequest(http.MethodGet, "/quotes/latest/EUR/MXN", nil)
-	req.Header.Set("Origin", swaggerUIOrigin)
+	req.Header.Set("Origin", testSwaggerUIOrigin)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
 
-	if rec.Header().Get("Access-Control-Allow-Origin") != swaggerUIOrigin {
+	if rec.Header().Get("Access-Control-Allow-Origin") != testSwaggerUIOrigin {
 		t.Fatalf("expected Swagger UI origin to be allowed")
 	}
 }
 
 func TestSwaggerCORSPreflight(t *testing.T) {
-	handler := New(newFakeStore(), map[string]struct{}{"EUR/MXN": {}})
+	handler := New(newFakeStore(), map[string]struct{}{"EUR/MXN": {}}, Options{SwaggerUIOrigin: testSwaggerUIOrigin})
 	req := httptest.NewRequest(http.MethodOptions, "/quote-updates", nil)
-	req.Header.Set("Origin", swaggerUIOrigin)
+	req.Header.Set("Origin", testSwaggerUIOrigin)
 	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
 	req.Header.Set("Access-Control-Request-Headers", "Content-Type, Idempotency-Key")
 	rec := httptest.NewRecorder()
@@ -161,7 +163,7 @@ func TestSwaggerCORSPreflight(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d", rec.Code)
 	}
-	if rec.Header().Get("Access-Control-Allow-Origin") != swaggerUIOrigin {
+	if rec.Header().Get("Access-Control-Allow-Origin") != testSwaggerUIOrigin {
 		t.Fatalf("expected Swagger UI origin to be allowed")
 	}
 	if rec.Header().Get("Access-Control-Allow-Headers") != "Content-Type, Idempotency-Key" {

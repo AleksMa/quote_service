@@ -12,6 +12,7 @@ func TestLoadFromYAML(t *testing.T) {
 	cfg := loadConfig(t, `
 http:
   addr: ":9090"
+  swagger_ui_origin: "http://localhost:8081"
 database:
   driver: postgres
   url: "postgres://example"
@@ -41,6 +42,9 @@ providers:
 
 	if cfg.HTTP.Addr != ":9090" || cfg.Database.Driver != "postgres" || cfg.Database.URL != "postgres://example" {
 		t.Fatalf("unexpected config: %+v", cfg)
+	}
+	if cfg.HTTP.SwaggerUIOrigin != "http://localhost:8081" {
+		t.Fatalf("unexpected Swagger UI origin: %q", cfg.HTTP.SwaggerUIOrigin)
 	}
 	if cfg.Worker.Interval != 3*time.Second || cfg.Worker.ClaimLimit != 10 || cfg.Worker.Concurrency != 4 {
 		t.Fatalf("unexpected worker config: %+v", cfg.Worker)
@@ -218,6 +222,35 @@ providers:
     base_url: https://api.example.test
     timeout: 5s
     rate_limit_per_second: 1
+`)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestLoadRejectsInvalidSwaggerUIOrigin(t *testing.T) {
+	_, err := loadConfigErr(t, `
+http:
+  addr: ":9090"
+  swagger_ui_origin: "localhost:8081"
+database:
+  driver: postgres
+  url: "postgres://example"
+worker:
+  interval: 3s
+  claim_limit: 10
+  concurrency: 4
+shutdown_timeout: 8s
+supported_pairs:
+  - EUR/USD
+providers:
+  - name: first
+    type: frankfurter
+    enabled: true
+    priority: 1
+    base_url: https://api.example.test
+    timeout: 5s
+    rate_limit_per_second: 2
 `)
 	if err == nil {
 		t.Fatal("expected error")

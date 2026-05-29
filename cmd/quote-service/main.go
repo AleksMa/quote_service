@@ -54,8 +54,12 @@ func main() {
 	go backgroundWorker.Run(ctx)
 
 	server := &http.Server{
-		Addr:              cfg.HTTP.Addr,
-		Handler:           httpapi.New(quoteStore, cfg.SupportedPairs),
+		Addr: cfg.HTTP.Addr,
+		Handler: httpapi.New(
+			quoteStore,
+			cfg.SupportedPairs,
+			httpapi.Options{SwaggerUIOrigin: cfg.HTTP.SwaggerUIOrigin},
+		),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
