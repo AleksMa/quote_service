@@ -23,6 +23,7 @@ var (
 	ErrInvalidPair     = errors.New("invalid currency pair")
 	ErrUnsupportedPair = errors.New("unsupported currency pair")
 	ErrNotFound        = errors.New("not found")
+	ErrAlreadyFinished = errors.New("already finished")
 )
 
 var (
