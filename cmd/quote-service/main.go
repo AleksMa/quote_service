@@ -11,10 +11,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/AleksMa/quote_service/internal/application"
 	"github.com/AleksMa/quote_service/internal/config"
 	"github.com/AleksMa/quote_service/internal/httpapi"
 	"github.com/AleksMa/quote_service/internal/provider"
-	"github.com/AleksMa/quote_service/internal/storage"
+	"github.com/AleksMa/quote_service/internal/storage/postgres"
 	"github.com/AleksMa/quote_service/internal/worker"
 )
 
@@ -37,10 +38,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	quoteStore, err := storage.Open(ctx, storage.Config{
-		Driver: cfg.Database.Driver,
-		URL:    cfg.Database.URL,
-	})
+	quoteStore, err := postgres.Open(ctx, cfg.Database.URL)
 	if err != nil {
 		return fmt.Errorf("open storage: %w", err)
 	}
@@ -50,7 +48,12 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("build provider chain: %w", err)
 	}
-	backgroundWorker := worker.New(quoteStore, rateProvider, worker.Options{
+	quoteService := application.NewQuoteService(quoteStore, cfg.SupportedPairs)
+	quoteProcessor := application.NewProcessor(quoteStore, rateProvider, logger)
+	if err := quoteProcessor.RequeueProcessing(ctx); err != nil {
+		return err
+	}
+	backgroundWorker := worker.New(quoteProcessor, worker.Options{
 		Interval:    cfg.Worker.Interval,
 		ClaimLimit:  cfg.Worker.ClaimLimit,
 		Concurrency: cfg.Worker.Concurrency,
@@ -61,8 +64,7 @@ func run() error {
 	server := &http.Server{
 		Addr: cfg.HTTP.Addr,
 		Handler: httpapi.New(
-			quoteStore,
-			cfg.SupportedPairs,
+			quoteService,
 			httpapi.Options{SwaggerUIOrigin: cfg.HTTP.SwaggerUIOrigin},
 		),
 		ReadHeaderTimeout: 5 * time.Second,

@@ -18,8 +18,8 @@ import (
 const testSwaggerUIOrigin = "http://localhost:8081"
 
 func TestCreateUpdateRequest(t *testing.T) {
-	store := newFakeStore()
-	handler := New(store, map[string]struct{}{"EUR/MXN": {}})
+	service := newFakeService()
+	handler := New(service)
 
 	body := bytes.NewBufferString(`{"pair":"EUR/MXN"}`)
 	req := httptest.NewRequest(http.MethodPost, "/quote-updates", body)
@@ -31,8 +31,8 @@ func TestCreateUpdateRequest(t *testing.T) {
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("expected 202, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if store.idempotencyKey != "same-key" {
-		t.Fatalf("idempotency key was not passed to store")
+	if service.idempotencyKey != "same-key" {
+		t.Fatalf("idempotency key was not passed to service")
 	}
 	var response quoteUpdateResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
@@ -47,7 +47,7 @@ func TestCreateUpdateRequest(t *testing.T) {
 }
 
 func TestCreateUpdateRequestRejectsUnsupportedPair(t *testing.T) {
-	handler := New(newFakeStore(), map[string]struct{}{"EUR/MXN": {}})
+	handler := New(newFakeService())
 	req := httptest.NewRequest(http.MethodPost, "/quote-updates", bytes.NewBufferString(`{"pair":"USD/EUR"}`))
 	rec := httptest.NewRecorder()
 
@@ -59,8 +59,8 @@ func TestCreateUpdateRequestRejectsUnsupportedPair(t *testing.T) {
 }
 
 func TestCreateUpdateRequestIsIdempotent(t *testing.T) {
-	store := newFakeStore()
-	handler := New(store, map[string]struct{}{"EUR/MXN": {}})
+	service := newFakeService()
+	handler := New(service)
 
 	first := postQuoteUpdate(t, handler, "same-key")
 	second := postQuoteUpdate(t, handler, "same-key")
@@ -77,13 +77,13 @@ func TestCreateUpdateRequestIsIdempotent(t *testing.T) {
 }
 
 func TestGetUpdateRequestPendingReturnsAccepted(t *testing.T) {
-	store := newFakeStore()
-	store.update = domain.UpdateRequest{
+	service := newFakeService()
+	service.update = domain.UpdateRequest{
 		ID:     "3f90b1d3-e261-4ac6-b7ac-1a66dc67f747",
 		Pair:   domain.Pair{Raw: "EUR/MXN", Base: "EUR", Quote: "MXN"},
 		Status: domain.StatusProcessing,
 	}
-	handler := New(store, map[string]struct{}{"EUR/MXN": {}})
+	handler := New(service)
 	req := httptest.NewRequest(http.MethodGet, "/quote-updates/3f90b1d3-e261-4ac6-b7ac-1a66dc67f747", nil)
 	rec := httptest.NewRecorder()
 
@@ -96,8 +96,8 @@ func TestGetUpdateRequestPendingReturnsAccepted(t *testing.T) {
 
 func TestGetUpdateRequestSucceededReturnsQuote(t *testing.T) {
 	finishedAt := time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC)
-	store := newFakeStore()
-	store.update = domain.UpdateRequest{
+	service := newFakeService()
+	service.update = domain.UpdateRequest{
 		ID:         "3f90b1d3-e261-4ac6-b7ac-1a66dc67f747",
 		Pair:       domain.Pair{Raw: "EUR/MXN", Base: "EUR", Quote: "MXN"},
 		Status:     domain.StatusSucceeded,
@@ -105,7 +105,7 @@ func TestGetUpdateRequestSucceededReturnsQuote(t *testing.T) {
 		Provider:   "frankfurter",
 		FinishedAt: &finishedAt,
 	}
-	handler := New(store, map[string]struct{}{"EUR/MXN": {}})
+	handler := New(service)
 	req := httptest.NewRequest(http.MethodGet, "/quote-updates/3f90b1d3-e261-4ac6-b7ac-1a66dc67f747", nil)
 	rec := httptest.NewRecorder()
 
@@ -132,9 +132,9 @@ func decimalPtr(value string) *decimal.Decimal {
 }
 
 func TestGetLatestQuoteMissingReturnsNotFound(t *testing.T) {
-	store := newFakeStore()
-	store.latestErr = domain.ErrNotFound
-	handler := New(store, map[string]struct{}{"EUR/MXN": {}})
+	service := newFakeService()
+	service.latestErr = domain.ErrNotFound
+	handler := New(service)
 	req := httptest.NewRequest(http.MethodGet, "/quotes/latest/EUR/MXN", nil)
 	rec := httptest.NewRecorder()
 
@@ -147,15 +147,15 @@ func TestGetLatestQuoteMissingReturnsNotFound(t *testing.T) {
 
 func TestGetLatestQuoteReturnsNumber(t *testing.T) {
 	updatedAt := time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC)
-	store := newFakeStore()
-	store.latest = domain.LatestQuote{
+	service := newFakeService()
+	service.latest = domain.LatestQuote{
 		Pair:      domain.Pair{Raw: "EUR/MXN", Base: "EUR", Quote: "MXN"},
 		Price:     decimal.RequireFromString("20.1234567890"),
 		Provider:  "frankfurter",
 		UpdatedAt: updatedAt,
 		RequestID: "3f90b1d3-e261-4ac6-b7ac-1a66dc67f747",
 	}
-	handler := New(store, map[string]struct{}{"EUR/MXN": {}})
+	handler := New(service)
 	req := httptest.NewRequest(http.MethodGet, "/quotes/latest/EUR/MXN", nil)
 	rec := httptest.NewRecorder()
 
@@ -177,9 +177,9 @@ func TestGetLatestQuoteReturnsNumber(t *testing.T) {
 }
 
 func TestSwaggerCORSForSimpleRequest(t *testing.T) {
-	store := newFakeStore()
-	store.latestErr = domain.ErrNotFound
-	handler := New(store, map[string]struct{}{"EUR/MXN": {}}, Options{SwaggerUIOrigin: mustURL(testSwaggerUIOrigin)})
+	service := newFakeService()
+	service.latestErr = domain.ErrNotFound
+	handler := New(service, Options{SwaggerUIOrigin: mustURL(testSwaggerUIOrigin)})
 	req := httptest.NewRequest(http.MethodGet, "/quotes/latest/EUR/MXN", nil)
 	req.Header.Set("Origin", testSwaggerUIOrigin)
 	rec := httptest.NewRecorder()
@@ -192,7 +192,7 @@ func TestSwaggerCORSForSimpleRequest(t *testing.T) {
 }
 
 func TestSwaggerCORSPreflight(t *testing.T) {
-	handler := New(newFakeStore(), map[string]struct{}{"EUR/MXN": {}}, Options{SwaggerUIOrigin: mustURL(testSwaggerUIOrigin)})
+	handler := New(newFakeService(), Options{SwaggerUIOrigin: mustURL(testSwaggerUIOrigin)})
 	req := httptest.NewRequest(http.MethodOptions, "/quote-updates", nil)
 	req.Header.Set("Origin", testSwaggerUIOrigin)
 	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
@@ -212,7 +212,7 @@ func TestSwaggerCORSPreflight(t *testing.T) {
 	}
 }
 
-type fakeStore struct {
+type fakeService struct {
 	idempotencyKey string
 	update         domain.UpdateRequest
 	latest         domain.LatestQuote
@@ -220,8 +220,8 @@ type fakeStore struct {
 	idempotent     map[string]domain.UpdateRequest
 }
 
-func newFakeStore() *fakeStore {
-	return &fakeStore{idempotent: make(map[string]domain.UpdateRequest)}
+func newFakeService() *fakeService {
+	return &fakeService{idempotent: make(map[string]domain.UpdateRequest)}
 }
 
 func mustURL(value string) url.URL {
@@ -232,7 +232,11 @@ func mustURL(value string) url.URL {
 	return *parsed
 }
 
-func (s *fakeStore) CreateUpdateRequest(ctx context.Context, pair domain.Pair, idempotencyKey string) (domain.UpdateRequest, bool, error) {
+func (s *fakeService) RequestQuoteUpdate(ctx context.Context, rawPair string, idempotencyKey string) (domain.UpdateRequest, bool, error) {
+	pair, err := domain.ParsePair(rawPair, map[string]struct{}{"EUR/MXN": {}})
+	if err != nil {
+		return domain.UpdateRequest{}, false, err
+	}
 	s.idempotencyKey = idempotencyKey
 	if idempotencyKey != "" {
 		key := pair.Raw + ":" + idempotencyKey
@@ -248,14 +252,17 @@ func (s *fakeStore) CreateUpdateRequest(ctx context.Context, pair domain.Pair, i
 	return domain.UpdateRequest{ID: id, Pair: pair, Status: domain.StatusPending}, false, nil
 }
 
-func (s *fakeStore) GetUpdateRequest(ctx context.Context, id string) (domain.UpdateRequest, error) {
+func (s *fakeService) GetQuoteUpdate(ctx context.Context, id string) (domain.UpdateRequest, error) {
 	if s.update.ID == "" {
 		return domain.UpdateRequest{}, domain.ErrNotFound
 	}
 	return s.update, nil
 }
 
-func (s *fakeStore) GetLatestQuote(ctx context.Context, pair domain.Pair) (domain.LatestQuote, error) {
+func (s *fakeService) GetLatestQuote(ctx context.Context, rawPair string) (domain.LatestQuote, error) {
+	if _, err := domain.ParsePair(rawPair, map[string]struct{}{"EUR/MXN": {}}); err != nil {
+		return domain.LatestQuote{}, err
+	}
 	if s.latestErr != nil {
 		return domain.LatestQuote{}, s.latestErr
 	}

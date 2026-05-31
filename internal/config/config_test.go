@@ -15,7 +15,6 @@ http:
   addr: ":9090"
   swagger_ui_origin: "http://localhost:8081"
 database:
-  driver: postgres
   url: "postgres://example"
 worker:
   interval: 3s
@@ -41,7 +40,7 @@ providers:
     rate_limit_per_second: 2
 `)
 
-	if cfg.HTTP.Addr != ":9090" || cfg.Database.Driver != "postgres" || cfg.Database.URL != "postgres://example" {
+	if cfg.HTTP.Addr != ":9090" || cfg.Database.URL != "postgres://example" {
 		t.Fatalf("unexpected config: %+v", cfg)
 	}
 	if cfg.HTTP.SwaggerUIOrigin.String() != "http://localhost:8081" {
@@ -69,7 +68,6 @@ func TestLoadRejectsUnsupportedProviderType(t *testing.T) {
 http:
   addr: ":9090"
 database:
-  driver: postgres
   url: "postgres://example"
 worker:
   interval: 3s
@@ -148,27 +146,6 @@ func TestLoadRejectsMissingRequiredFields(t *testing.T) {
 	tests := map[string]string{
 		"http addr": `
 database:
-  driver: postgres
-  url: "postgres://example"
-worker:
-  interval: 3s
-  claim_limit: 10
-  concurrency: 4
-shutdown_timeout: 8s
-supported_pairs: [EUR/USD]
-providers:
-  - name: first
-    type: frankfurter
-    enabled: true
-    priority: 1
-    base_url: https://api.example.test
-    timeout: 5s
-    rate_limit_per_second: 2
-`,
-		"database driver": `
-http:
-  addr: ":9090"
-database:
   url: "postgres://example"
 worker:
   interval: 3s
@@ -189,7 +166,6 @@ providers:
 http:
   addr: ":9090"
 database:
-  driver: postgres
   url: "postgres://example"
 worker:
   claim_limit: 10
@@ -209,7 +185,6 @@ providers:
 http:
   addr: ":9090"
 database:
-  driver: postgres
   url: "postgres://example"
 worker:
   interval: 3s
@@ -229,7 +204,6 @@ providers:
 http:
   addr: ":9090"
 database:
-  driver: postgres
   url: "postgres://example"
 worker:
   interval: 3s
@@ -249,7 +223,6 @@ providers:
 http:
   addr: ":9090"
 database:
-  driver: postgres
   url: "postgres://example"
 worker:
   interval: 3s
@@ -282,7 +255,6 @@ func TestLoadRejectsNoEnabledProviders(t *testing.T) {
 http:
   addr: ":9090"
 database:
-  driver: postgres
   url: "postgres://example"
 worker:
   interval: 3s
@@ -311,7 +283,6 @@ http:
   addr: ":9090"
   swagger_ui_origin: "localhost:8081"
 database:
-  driver: postgres
   url: "postgres://example"
 worker:
   interval: 3s
@@ -339,7 +310,6 @@ func TestLoadRejectsInvalidProviderBaseURL(t *testing.T) {
 http:
   addr: ":9090"
 database:
-  driver: postgres
   url: "postgres://example"
 worker:
   interval: 3s
@@ -373,7 +343,6 @@ func TestLoadDoesNotOverrideYAMLFromEnv(t *testing.T) {
 http:
   addr: ":9090"
 database:
-  driver: postgres
   url: "postgres://yaml"
 worker:
   interval: 3s

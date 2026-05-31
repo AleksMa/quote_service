@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,20 +11,24 @@ import (
 	"time"
 
 	"github.com/AleksMa/quote_service/internal/domain"
-	"github.com/AleksMa/quote_service/internal/storage"
 )
 
+type QuoteService interface {
+	RequestQuoteUpdate(ctx context.Context, pair string, idempotencyKey string) (domain.UpdateRequest, bool, error)
+	GetQuoteUpdate(ctx context.Context, id string) (domain.UpdateRequest, error)
+	GetLatestQuote(ctx context.Context, pair string) (domain.LatestQuote, error)
+}
+
 type Handler struct {
-	store          storage.APIStore
-	supportedPairs map[string]struct{}
+	service QuoteService
 }
 
 type Options struct {
 	SwaggerUIOrigin url.URL
 }
 
-func New(store storage.APIStore, supportedPairs map[string]struct{}, opts ...Options) http.Handler {
-	h := &Handler{store: store, supportedPairs: supportedPairs}
+func New(service QuoteService, opts ...Options) http.Handler {
+	h := &Handler{service: service}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/quote-updates", h.quoteUpdates)
 	mux.HandleFunc("/quote-updates/", h.quoteUpdateByID)
@@ -70,20 +75,18 @@ func (h *Handler) quoteUpdates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pair, err := domain.ParsePair(req.Pair, h.supportedPairs)
-	if err != nil {
-		writePairError(w, err)
-		return
-	}
-
 	idempotencyKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	if len(idempotencyKey) > 255 {
 		writeError(w, http.StatusBadRequest, "invalid_idempotency_key", "Idempotency-Key must be at most 255 characters")
 		return
 	}
 
-	update, idempotencyReplayed, err := h.store.CreateUpdateRequest(r.Context(), pair, idempotencyKey)
+	update, idempotencyReplayed, err := h.service.RequestQuoteUpdate(r.Context(), req.Pair, idempotencyKey)
 	if err != nil {
+		if errors.Is(err, domain.ErrInvalidPair) || errors.Is(err, domain.ErrUnsupportedPair) {
+			writePairError(w, err)
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to create update request")
 		return
 	}
@@ -109,7 +112,7 @@ func (h *Handler) quoteUpdateByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	update, err := h.store.GetUpdateRequest(r.Context(), id)
+	update, err := h.service.GetQuoteUpdate(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			notFound(w)
@@ -136,14 +139,12 @@ func (h *Handler) latestQuote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rawPair := strings.TrimPrefix(r.URL.Path, "/quotes/latest/")
-	pair, err := domain.ParsePair(rawPair, h.supportedPairs)
+	quote, err := h.service.GetLatestQuote(r.Context(), rawPair)
 	if err != nil {
-		writePairError(w, err)
-		return
-	}
-
-	quote, err := h.store.GetLatestQuote(r.Context(), pair)
-	if err != nil {
+		if errors.Is(err, domain.ErrInvalidPair) || errors.Is(err, domain.ErrUnsupportedPair) {
+			writePairError(w, err)
+			return
+		}
 		if errors.Is(err, domain.ErrNotFound) {
 			notFound(w)
 			return

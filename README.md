@@ -77,12 +77,20 @@ Worker settings:
 
 ## Details
 
+### Architecture
+
+- `internal/httpapi` validates HTTP input and writes HTTP responses.
+- `internal/application` implements quote use cases and background job processing.
+- `internal/storage/postgres` owns PostgreSQL queries and atomic persistence operations.
+- `internal/provider` integrates with external rate providers.
+- `internal/worker` periodically triggers pending job processing.
+
 ### Strengths
 
 - Client-side idempotency via optional `Idempotency-Key`: repeated requests with the same pair and key return the original `request_id`.
 - Provider request deduplication by currency pair: multiple client requests for the same pair share one pending or processing background job.
 - Multiple provider support: providers are configured in priority order, and the worker falls back to the next provider when a call fails.
-- Docker Compose, OpenAPI, and tests are included for local verification and review.
+- Docker Compose, OpenAPI, unit tests.
 
 ### Known Limitations / Next Steps
 

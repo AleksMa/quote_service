@@ -192,6 +192,39 @@ func TestStoreMarkFailed(t *testing.T) {
 	}
 }
 
+func TestStoreRequeueProcessingJobs(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+	pair := uniquePair(t)
+
+	created, _, err := store.CreateUpdateRequest(ctx, pair, "test-"+uniqueID(t))
+	if err != nil {
+		t.Fatalf("CreateUpdateRequest returned error: %v", err)
+	}
+	t.Cleanup(cleanupPair(t, store, pair))
+	prioritizePendingJob(t, store, created.JobID)
+
+	claimed, err := store.ClaimPending(ctx, 1)
+	if err != nil {
+		t.Fatalf("ClaimPending returned error: %v", err)
+	}
+	if len(claimed) != 1 || claimed[0].ID != created.JobID {
+		t.Fatalf("unexpected claimed jobs: %+v", claimed)
+	}
+
+	if err := store.RequeueProcessingJobs(ctx); err != nil {
+		t.Fatalf("RequeueProcessingJobs returned error: %v", err)
+	}
+
+	reclaimed, err := store.ClaimPending(ctx, 1)
+	if err != nil {
+		t.Fatalf("ClaimPending returned error after requeue: %v", err)
+	}
+	if len(reclaimed) != 1 || reclaimed[0].ID != created.JobID {
+		t.Fatalf("unexpected reclaimed jobs: %+v", reclaimed)
+	}
+}
+
 func openTestStore(t *testing.T) *Store {
 	t.Helper()
 

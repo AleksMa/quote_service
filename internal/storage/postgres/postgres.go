@@ -38,10 +38,6 @@ func Open(ctx context.Context, databaseURL string) (*Store, error) {
 		store.Close()
 		return nil, err
 	}
-	if err := store.resetProcessing(ctx); err != nil {
-		store.Close()
-		return nil, err
-	}
 	return store, nil
 }
 
@@ -67,14 +63,14 @@ func (s *Store) migrate(ctx context.Context) error {
 	return nil
 }
 
-func (s *Store) resetProcessing(ctx context.Context) error {
+func (s *Store) RequeueProcessingJobs(ctx context.Context) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE quote_update_jobs
 		SET status = $1, started_at = NULL
 		WHERE status = $2
 	`, domain.StatusPending, domain.StatusProcessing)
 	if err != nil {
-		return fmt.Errorf("reset processing jobs: %w", err)
+		return fmt.Errorf("requeue processing jobs: %w", err)
 	}
 	return nil
 }

@@ -30,8 +30,7 @@ type HTTPConfig struct {
 }
 
 type DatabaseConfig struct {
-	Driver string `yaml:"driver"`
-	URL    string `yaml:"url"`
+	URL string `yaml:"url"`
 }
 
 type WorkerConfig struct {
@@ -155,8 +154,7 @@ func normalizeHTTPConfig(cfg rawHTTPConfig) (HTTPConfig, error) {
 
 func normalizeDatabaseConfig(cfg DatabaseConfig) DatabaseConfig {
 	return DatabaseConfig{
-		Driver: strings.TrimSpace(cfg.Driver),
-		URL:    strings.TrimSpace(cfg.URL),
+		URL: strings.TrimSpace(cfg.URL),
 	}
 }
 
@@ -235,9 +233,6 @@ func (c HTTPConfig) validate() error {
 }
 
 func (c DatabaseConfig) validate() error {
-	if c.Driver == "" {
-		return fmt.Errorf("database.driver is required")
-	}
 	if c.URL == "" {
 		return fmt.Errorf("database.url is required")
 	}

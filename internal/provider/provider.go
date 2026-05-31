@@ -8,18 +8,10 @@ import (
 	"time"
 
 	"github.com/AleksMa/quote_service/internal/domain"
-	"github.com/shopspring/decimal"
 )
 
-type Rate struct {
-	Pair      domain.Pair
-	Price     decimal.Decimal
-	Provider  string
-	FetchedAt time.Time
-}
-
 type Client interface {
-	FetchRate(ctx context.Context, pair domain.Pair) (Rate, error)
+	FetchRate(ctx context.Context, pair domain.Pair) (domain.FetchedRate, error)
 }
 
 type NamedClient struct {
@@ -38,7 +30,7 @@ func NewChain(clients []NamedClient) (*Chain, error) {
 	return &Chain{clients: clients}, nil
 }
 
-func (c *Chain) FetchRate(ctx context.Context, pair domain.Pair) (Rate, error) {
+func (c *Chain) FetchRate(ctx context.Context, pair domain.Pair) (domain.FetchedRate, error) {
 	var errs []error
 	for _, client := range c.clients {
 		rate, err := client.Client.FetchRate(ctx, pair)
@@ -47,7 +39,7 @@ func (c *Chain) FetchRate(ctx context.Context, pair domain.Pair) (Rate, error) {
 		}
 		errs = append(errs, fmt.Errorf("%s failed: %w", client.Name, err))
 	}
-	return Rate{}, fmt.Errorf("all providers failed: %w", errors.Join(errs...))
+	return domain.FetchedRate{}, fmt.Errorf("all providers failed: %w", errors.Join(errs...))
 }
 
 type RateLimitedClient struct {
@@ -62,9 +54,9 @@ func NewRateLimitedClient(client Client, perSecond int) Client {
 	return &RateLimitedClient{client: client, limiter: NewLimiter(perSecond)}
 }
 
-func (c *RateLimitedClient) FetchRate(ctx context.Context, pair domain.Pair) (Rate, error) {
+func (c *RateLimitedClient) FetchRate(ctx context.Context, pair domain.Pair) (domain.FetchedRate, error) {
 	if err := c.limiter.Wait(ctx); err != nil {
-		return Rate{}, err
+		return domain.FetchedRate{}, err
 	}
 	return c.client.FetchRate(ctx, pair)
 }

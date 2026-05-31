@@ -19,7 +19,7 @@ func TestChainFallsBackToNextProvider(t *testing.T) {
 	pair := domain.Pair{Raw: "EUR/USD", Base: "EUR", Quote: "USD"}
 	chain, err := NewChain([]NamedClient{
 		{Name: "first", Client: staticProvider{err: errors.New("down")}},
-		{Name: "second", Client: staticProvider{rate: Rate{Pair: pair, Price: decimal.RequireFromString("1.2"), Provider: "second", FetchedAt: time.Now()}}},
+		{Name: "second", Client: staticProvider{rate: domain.FetchedRate{Pair: pair, Price: decimal.RequireFromString("1.2"), Provider: "second", FetchedAt: time.Now()}}},
 	})
 	if err != nil {
 		t.Fatalf("NewChain returned error: %v", err)
@@ -35,11 +35,11 @@ func TestChainFallsBackToNextProvider(t *testing.T) {
 }
 
 type staticProvider struct {
-	rate Rate
+	rate domain.FetchedRate
 	err  error
 }
 
-func (p staticProvider) FetchRate(ctx context.Context, pair domain.Pair) (Rate, error) {
+func (p staticProvider) FetchRate(ctx context.Context, pair domain.Pair) (domain.FetchedRate, error) {
 	return p.rate, p.err
 }
 

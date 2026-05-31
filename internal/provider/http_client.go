@@ -56,7 +56,7 @@ func NewHTTPClient(cfg HTTPClientConfig) *HTTPClient {
 	}
 }
 
-func (c *HTTPClient) FetchRate(ctx context.Context, pair domain.Pair) (Rate, error) {
+func (c *HTTPClient) FetchRate(ctx context.Context, pair domain.Pair) (domain.FetchedRate, error) {
 	reqCfg := RequestConfig{
 		Name:    c.name,
 		BaseURL: c.baseURL,
@@ -65,26 +65,26 @@ func (c *HTTPClient) FetchRate(ctx context.Context, pair domain.Pair) (Rate, err
 
 	req, err := c.buildRequest(ctx, reqCfg, pair)
 	if err != nil {
-		return Rate{}, err
+		return domain.FetchedRate{}, err
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return Rate{}, fmt.Errorf("call %s: %w", c.name, err)
+		return domain.FetchedRate{}, fmt.Errorf("call %s: %w", c.name, err)
 	}
 	defer resp.Body.Close()
 
 	price, err := c.decodeResponse(resp, reqCfg, pair)
 	if err != nil {
-		return Rate{}, err
+		return domain.FetchedRate{}, err
 	}
 
 	err = validatePrice(c.name, price)
 	if err != nil {
-		return Rate{}, err
+		return domain.FetchedRate{}, err
 	}
 
-	return Rate{
+	return domain.FetchedRate{
 		Pair:      pair,
 		Price:     price,
 		Provider:  c.name,

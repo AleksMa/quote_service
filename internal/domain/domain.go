@@ -100,6 +100,13 @@ type UpdateJob struct {
 	FinishedAt *time.Time
 }
 
+type FetchedRate struct {
+	Pair      Pair
+	Price     decimal.Decimal
+	Provider  string
+	FetchedAt time.Time
+}
+
 type LatestQuote struct {
 	Pair      Pair
 	Price     decimal.Decimal

@@ -3,7 +3,6 @@ http:
   swagger_ui_origin: "http://localhost:8081"
 
 database:
-  driver: postgres
   url: "postgres://quote_service:quote_service@db:5432/quote_service?sslmode=disable"
 
 worker:
